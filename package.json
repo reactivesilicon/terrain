@@ -1,6 +1,6 @@
 {
-  "name": "${PROJECT_NAME}",
-  "version": "1.0.0",
+  "name": "terrain",
+  "version": "0.0.1",
   "description": "",
   "main": "dist/index.js",
   "scripts": {
@@ -8,7 +8,7 @@
   },
   "dependencies": {},
   "devDependencies": {
-    "typescript": "^5.5.3"
+    "typescript": "^6.0.3"
   },
   "private": true
 }
