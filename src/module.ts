@@ -1,4 +1,4 @@
-import type { AsyncProvider, Definition, Lifetime, SyncProvider } from "./types"
+import {type AsyncProvider, type Definition, type Lifetime, Lifetimes, type SyncProvider} from "./types"
 import type { Token } from "./token"
 import { DuplicateDefinitionError } from "./errors"
 
@@ -56,22 +56,22 @@ export class ModuleBuilder {
   }
 
   single<T>(token: Token<T>, provider: SyncProvider<T>): void {
-    this.add(token, "singleton", provider, false)
+    this.add(token, Lifetimes.Singleton, provider, false)
   }
   singleAsync<T>(token: Token<T>, provider: AsyncProvider<T>): void {
-    this.add(token, "singleton", provider, true)
+    this.add(token, Lifetimes.Singleton, provider, true)
   }
   factory<T>(token: Token<T>, provider: SyncProvider<T>): void {
-    this.add(token, "factory", provider, false)
+    this.add(token, Lifetimes.Factory, provider, false)
   }
   factoryAsync<T>(token: Token<T>, provider: AsyncProvider<T>): void {
-    this.add(token, "factory", provider, true)
+    this.add(token, Lifetimes.Factory, provider, true)
   }
   scoped<T>(token: Token<T>, provider: SyncProvider<T>): void {
-    this.add(token, "scoped", provider, false)
+    this.add(token, Lifetimes.Scoped, provider, false)
   }
   scopedAsync<T>(token: Token<T>, provider: AsyncProvider<T>): void {
-    this.add(token, "scoped", provider, true)
+    this.add(token, Lifetimes.Scoped, provider, true)
   }
 
   build(): Module {

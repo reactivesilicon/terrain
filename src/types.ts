@@ -1,6 +1,11 @@
-import type { Token } from "./token"
+import type {Token} from "./token"
 
-export type Lifetime = "singleton" | "factory" | "scoped"
+export const Lifetimes = {
+  Singleton: "singleton",
+  Factory: "factory",
+  Scoped: "scoped",
+} as const
+export type Lifetime = typeof Lifetimes[keyof typeof Lifetimes]
 
 /** Resolver handed to synchronous providers — no getAsync. */
 export interface SyncResolver {

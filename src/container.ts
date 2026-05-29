@@ -13,16 +13,17 @@ import {
   isFrameworkError,
 } from "./errors"
 
-import type {
-  AsyncProvider,
-  AsyncResolver,
-  ContainerOptions,
-  Definition,
-  Disposable,
-  Lifetime,
-  LoadOptions,
-  SyncProvider,
-  SyncResolver,
+import {
+  type AsyncProvider,
+  type AsyncResolver,
+  type ContainerOptions,
+  type Definition,
+  type Disposable,
+  type Lifetime,
+  Lifetimes,
+  type LoadOptions,
+  type SyncProvider,
+  type SyncResolver,
 } from "./types"
 
 import type { Token } from "./token"
@@ -293,11 +294,11 @@ export class Container {
 
     const next = this.extend(chain, token, definition.lifetime)
     switch (definition.lifetime) {
-      case "singleton":
+      case Lifetimes.Singleton:
         return owner.resolveSingletonSync(token, definition, next)
-      case "scoped":
+      case Lifetimes.Scoped:
         return this.resolveScopedSync(token, definition, next)
-      case "factory":
+      case Lifetimes.Factory:
         return this.resolveFactorySync(definition, next)
       default: {
         const _exhaustive: never = definition.lifetime
@@ -356,11 +357,11 @@ export class Container {
 
     const next = this.extend(chain, token, definition.lifetime)
     switch (definition.lifetime) {
-      case "singleton":
+      case Lifetimes.Singleton:
         return owner.resolveSingletonAsync(token, definition, next)
-      case "scoped":
+      case Lifetimes.Scoped:
         return this.resolveScopedAsync(token, definition, next)
-      case "factory":
+      case Lifetimes.Factory:
         return this.resolveFactoryAsync(definition, next)
       default: {
         const _exhaustive: never = definition.lifetime
@@ -566,7 +567,7 @@ export class Container {
 
   private checkCaptive(definition: Definition<any>, token: Token<any>, chain: ResolutionFrame[]): void {
     if (definition.lifetime !== "scoped") return
-    const singletonAncestor = chain.find((f) => f.lifetime === "singleton")
+    const singletonAncestor = chain.find((f) => f.lifetime === Lifetimes.Singleton)
     if (singletonAncestor) {
       throw new CaptiveDependencyError(tokenName(singletonAncestor.token), tokenName(token))
     }
