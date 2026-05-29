@@ -103,10 +103,6 @@ export class Container {
     this.options = options
   }
 
-  private assertNotDisposed(): void {
-    if (this.disposed) throw new DisposedContainerError()
-  }
-
   private root(): Container {
     let current: Container = this
     while (current.parent) current = current.parent
@@ -634,7 +630,7 @@ export class Container {
     // Dispose in reverse creation order, filtered to the affected instances.
     for (let i = this.disposables.length - 1; i >= 0; i--) {
       const disposable = this.disposables[i]
-      if (!affected.has(disposable)) continue
+      if (disposable === undefined || !affected.has(disposable)) continue
       this.removeDisposable(disposable)
       try {
         await disposable.dispose()
@@ -715,8 +711,10 @@ export class Container {
     this.factoryPromises.clear()
 
     for (let i = this.disposables.length - 1; i >= 0; i--) {
+      const disposable = this.disposables[i]
+      if (disposable === undefined) continue
       try {
-        await this.disposables[i].dispose()
+        await disposable.dispose()
       } catch (error) {
         errors.push(error)
       }

@@ -64,7 +64,7 @@ export class ModuleOwnershipError extends DIError {
 }
 
 export class ProviderExecutionError extends DIError {
-  readonly cause: unknown
+  override readonly cause: unknown
   constructor(name: string, cause: unknown) {
     super(`Provider for token '${name}' threw during construction.`)
     this.name = "ProviderExecutionError"
