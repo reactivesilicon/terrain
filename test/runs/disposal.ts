@@ -157,4 +157,107 @@ suite("disposal", (test) => {
     await delay(10)
     assert(rejection instanceof DisposedContainerError)
   })
+
+  test("dispose collects disposal errors into an AggregateError", async () => {
+    const T = createToken<{ dispose(): void }>("disposeThrows")
+    const c = new Container()
+    c.load(createModule((m) => m.single(T, () => ({
+      dispose: () => { throw new Error("boom") },
+    }))))
+    c.get(T)
+    let caught: unknown
+    try {
+      await c.dispose()
+    } catch (e) {
+      caught = e
+    }
+    assert(caught instanceof AggregateError, "dispose must reject with AggregateError")
+    assert(
+      (caught as AggregateError).errors.some(
+        (x) => x instanceof Error && x.message === "boom",
+      ),
+      "original disposal error must be present",
+    )
+  })
+
+  test("disposes a 3-chain in reverse creation order", async () => {
+    const A = createToken<{ dispose(): void }>("a3")
+    const B = createToken<{ dispose(): void }>("b3")
+    const D = createToken<{ dispose(): void }>("c3")
+    const order: string[] = []
+    const c = new Container()
+    c.load(createModule((m) => {
+      m.single(A, () => ({ dispose: () => order.push("a") }))
+      m.single(B, (r) => { r.get(A); return { dispose: () => order.push("b") } })
+      m.single(D, (r) => { r.get(B); return { dispose: () => order.push("c") } })
+    }))
+    c.get(D) // creation order a, b, c
+    await c.dispose()
+    assertEqual(order.join(","), "c,b,a")
+  })
+
+  test("one throwing disposal does not prevent the others", async () => {
+    const A = createToken<{ dispose(): void }>("aFail")
+    const B = createToken<{ dispose(): void }>("bFail")
+    const D = createToken<{ dispose(): void }>("cFail")
+    const disposed: string[] = []
+    const c = new Container()
+    c.load(createModule((m) => {
+      m.single(A, () => ({ dispose: () => disposed.push("a") }))
+      m.single(B, (r) => {
+        r.get(A)
+        return { dispose: () => { throw new Error("middle") } }
+      })
+      m.single(D, (r) => { r.get(B); return { dispose: () => disposed.push("c") } })
+    }))
+    c.get(D)
+    let caught: unknown
+    try {
+      await c.dispose()
+    } catch (e) {
+      caught = e
+    }
+    assertEqual(disposed.sort().join(","), "a,c", "non-throwing disposables still disposed")
+    assert(
+      caught instanceof AggregateError &&
+      caught.errors.some((x) => x instanceof Error && x.message === "middle"),
+      "the failure is surfaced",
+    )
+  })
+
+  test("mixed singleton and scoped disposables dispose in reverse creation order", async () => {
+    const Single = createToken<{ dispose(): void }>("mixSingle")
+    const Scoped = createToken<{ dispose(): void }>("mixScoped")
+    const order: string[] = []
+    const root = new Container()
+    root.load(createModule((m) => {
+      m.single(Single, () => ({ dispose: () => order.push("single") }))
+      m.scoped(Scoped, (r) => {
+        r.get(Single) // single created first
+        return { dispose: () => order.push("scoped") }
+      })
+    }))
+    const scope = root.createScope()
+    scope.get(Scoped)
+    await scope.dispose()
+    // scope disposes its own scoped instance; single lives on root, untouched here
+    assertEqual(order.join(","), "scoped")
+    await root.dispose()
+    assertEqual(order.join(","), "scoped,single")
+  })
+
+  test("unload disposes evicted instances in reverse creation order", async () => {
+    const A = createToken<{ dispose(): void }>("ulA")
+    const B = createToken<{ dispose(): void }>("ulB")
+    const order: string[] = []
+    const mod = createModule((m) => {
+      m.single(A, () => ({ dispose: () => order.push("a") }))
+      m.single(B, (r) => { r.get(A); return { dispose: () => order.push("b") } })
+    })
+    const c = new Container()
+    c.load(mod)
+    c.get(B) // creation order a, b
+    await c.unload(mod)
+    assertEqual(order.join(","), "b,a")
+  })
 })
