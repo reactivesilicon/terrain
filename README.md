@@ -1,7 +1,7 @@
 
 # terrain
 
-A Koin-inspired dependency injection container for TypeScript.
+A pragmatic TypeScript Dependency Injection framework - inspired by Koin
 
 No decorators. No reflection. No framework dependency. Just a small, explicit, DSL-based container with typed tokens, modules, scopes, async providers, disposal, and lifecycle safety.
 
