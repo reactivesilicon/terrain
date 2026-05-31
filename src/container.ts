@@ -26,13 +26,10 @@ import {
   type SyncResolver,
 } from "./types"
 
-import type { Token } from "./token"
+import type {Token} from "./token"
 
-import type { Module } from "./module"
-
-function tokenName(token: symbol): string {
-  return token.description || "UnknownToken"
-}
+import type {Module} from "./module"
+import {tokenName} from "./utils";
 
 function isDisposable(value: unknown): value is Disposable {
   return (
@@ -76,13 +73,13 @@ export class Container {
 
   private definitions = new Map<Token<any>, Definition<any>>()
 
-  private singletons = new Map<Token<any>, any>()
-  private singletonPromises = new Map<Token<any>, Promise<any>>()
+  private singletonInstances = new Map<Token<any>, any>()
+  private singletonResolutionPromises = new Map<Token<any>, Promise<any>>()
   private scopedInstances = new Map<Token<any>, any>()
-  private scopedPromises = new Map<Token<any>, Promise<any>>()
+  private scopedResolutionPromises = new Map<Token<any>, Promise<any>>()
   // In-flight async factory resolutions, grouped by token. Factories are
   // caller-owned once built, but tracking lets teardown await/orphan them.
-  private factoryPromises = new Map<Token<any>, Set<Promise<any>>>()
+  private factoryResolutionPromises = new Map<Token<any>, Set<Promise<any>>>()
 
   private disposables: Disposable[] = []
   private disposableSet = new Set<Disposable>()
@@ -286,10 +283,10 @@ export class Container {
 
     const found = this.findOwner(token)
     if (!found) throw new MissingDependencyError(tokenName(token))
-    const { definition, owner } = found
+    const {definition, owner} = found
 
-    this.checkCircular(token, chain)
-    this.checkCaptive(definition, token, chain)
+    this.checkCircularDependency(token, chain)
+    this.checkCaptiveDependency(definition, token, chain)
     if (definition.async) throw new AsyncProviderError(tokenName(token))
 
     const next = this.extend(chain, token, definition.lifetime)
@@ -308,10 +305,10 @@ export class Container {
   }
 
   private resolveSingletonSync<T>(token: Token<T>, definition: Definition<T>, chain: ResolutionFrame[]): T {
-    if (this.singletons.has(token)) return this.singletons.get(token)
+    if (this.singletonInstances.has(token)) return this.singletonInstances.get(token)
     const instance = this.ensureSync(this.invokeProvider(definition, chain), token)
     this.guardAfterConstruction(token, instance)
-    this.singletons.set(token, instance)
+    this.singletonInstances.set(token, instance)
     this.trackDisposable(instance)
     return instance
   }
@@ -350,10 +347,10 @@ export class Container {
 
     const found = this.findOwner(token)
     if (!found) throw new MissingDependencyError(tokenName(token))
-    const { definition, owner } = found
+    const {definition, owner} = found
 
-    this.checkCircular(token, chain)
-    this.checkCaptive(definition, token, chain)
+    this.checkCircularDependency(token, chain)
+    this.checkCaptiveDependency(definition, token, chain)
 
     const next = this.extend(chain, token, definition.lifetime)
     switch (definition.lifetime) {
@@ -370,93 +367,102 @@ export class Container {
     }
   }
 
-  private resolveSingletonAsync<T>(token: Token<T>, definition: Definition<T>, chain: ResolutionFrame[]): Promise<T> {
-    if (this.singletons.has(token)) return Promise.resolve(this.singletons.get(token))
-    const pending = this.singletonPromises.get(token)
+  /**
+   * Guards a cache-writing async resolution: runs the build, then refuses to commit if the tree was torn down / token unloaded / a newer resolution won.
+   * */
+  private async resolveGuarded<T>({token, build, isStale}: {
+    token: Token<any>,
+    build: () => Promise<T>,
+    isStale: () => boolean,
+  }): Promise<T> {
+    let instance: T
+    try {
+      instance = await build()
+    } catch (error) {
+      throw this.wrapProviderError(token, error)
+    }
+    if (this.isTreeDisposed() || this.unloading.has(token) || isStale()) {
+      await this.disposeOrphan(instance)
+      throw new DisposedContainerError()
+    }
+    return instance
+  }
+
+  private async resolveCachedAsync<T>(
+    token: Token<T>,
+    definition: Definition<T>,
+    chain: ResolutionFrame[],
+    instances: Map<Token<any>, any>,
+    resolutionPromises: Map<Token<any>, Promise<any>>,
+  ): Promise<T> {
+    if (instances.has(token)) return instances.get(token)
+    const pending = resolutionPromises.get(token)
     if (pending) return pending
 
     let promise: Promise<T>
-    promise = Promise.resolve()
-      .then(() => this.invokeProvider(definition, chain) as T | Promise<T>)
-      .then(async (instance: T) => {
-        if (this.isTreeDisposed() || this.unloading.has(token) || this.singletonPromises.get(token) !== promise) {
-          await this.disposeOrphan(instance)
-          throw new DisposedContainerError()
-        }
-        this.singletons.set(token, instance)
-        this.trackDisposable(instance)
-        this.singletonPromises.delete(token)
-        return instance
-      })
-      .catch((error: unknown) => {
-        if (this.singletonPromises.get(token) === promise) this.singletonPromises.delete(token)
-        throw this.wrapProviderError(token, error)
-      })
+    promise = this.resolveGuarded({
+      token: token,
+      build: async () => await this.invokeProvider(definition, chain),
+      isStale: () => resolutionPromises.get(token) !== promise,
+    })
+    resolutionPromises.set(token, promise)
 
-    this.singletonPromises.set(token, promise)
-    return promise
+    const settledResolution = await promise.then(
+      (value) => ({ ok: true as const, value }),
+      (error) => ({ ok: false as const, error }),
+    )
+
+    if (settledResolution.ok) {
+      instances.set(token, settledResolution.value)
+      this.trackDisposable(settledResolution.value)
+      resolutionPromises.delete(token)
+      return settledResolution.value
+    }
+
+    if (resolutionPromises.get(token) === promise) resolutionPromises.delete(token)
+    throw settledResolution.error
+  }
+
+  private resolveSingletonAsync<T>(token: Token<T>, definition: Definition<T>, chain: ResolutionFrame[]): Promise<T> {
+    return this.resolveCachedAsync(token, definition, chain, this.singletonInstances, this.singletonResolutionPromises)
   }
 
   private resolveScopedAsync<T>(token: Token<T>, definition: Definition<T>, chain: ResolutionFrame[]): Promise<T> {
-    if (this.scopedInstances.has(token)) return Promise.resolve(this.scopedInstances.get(token))
-    const pending = this.scopedPromises.get(token)
-    if (pending) return pending
-
-    let promise: Promise<T>
-    promise = Promise.resolve()
-      .then(() => this.invokeProvider(definition, chain) as T | Promise<T>)
-      .then(async (instance: T) => {
-        if (this.isTreeDisposed() || this.unloading.has(token) || this.scopedPromises.get(token) !== promise) {
-          await this.disposeOrphan(instance)
-          throw new DisposedContainerError()
-        }
-        this.scopedInstances.set(token, instance)
-        this.trackDisposable(instance)
-        this.scopedPromises.delete(token)
-        return instance
-      })
-      .catch((error: unknown) => {
-        if (this.scopedPromises.get(token) === promise) this.scopedPromises.delete(token)
-        throw this.wrapProviderError(token, error)
-      })
-
-    this.scopedPromises.set(token, promise)
-    return promise
+    return this.resolveCachedAsync(token, definition, chain, this.scopedInstances, this.scopedResolutionPromises)
   }
 
-  private resolveFactoryAsync<T>(definition: Definition<T>, chain: ResolutionFrame[]): Promise<T> {
+  private async resolveFactoryAsync<T>(definition: Definition<T>, chain: ResolutionFrame[]): Promise<T> {
     const token = definition.token
-    let set = this.factoryPromises.get(token)
-    if (!set) {
-      set = new Set()
-      this.factoryPromises.set(token, set)
+
+    let pendingTokenResolutionPromises = this.factoryResolutionPromises.get(token)
+    if (!pendingTokenResolutionPromises) {
+      pendingTokenResolutionPromises = new Set()
+      this.factoryResolutionPromises.set(token, pendingTokenResolutionPromises)
     }
 
-    let promise: Promise<T>
-    promise = Promise.resolve()
-      .then(() => this.invokeProvider(definition, chain) as T | Promise<T>)
-      .then(async (instance: T) => {
-        // Factory results are caller-owned, but a container torn down during
-        // construction must not finish handing out a new object.
-        if (this.isTreeDisposed() || this.unloading.has(token)) {
-          await this.disposeOrphan(instance)
-          throw new DisposedContainerError()
-        }
-        return instance
-      })
-      .catch((error: unknown) => {
-        throw this.wrapProviderError(token, error)
-      })
-      .finally(() => {
-        const s = this.factoryPromises.get(token)
-        if (s) {
-          s.delete(promise)
-          if (s.size === 0) this.factoryPromises.delete(token)
-        }
-      })
+    const tokenResolutionPromise = this.resolveGuarded({
+      token: token,
+      build: async () => await this.invokeProvider(definition, chain),
+      isStale: () => false,
+    })
+    pendingTokenResolutionPromises.add(tokenResolutionPromise)
 
-    set.add(promise)
-    return promise
+    const settledResolution = await tokenResolutionPromise.then(
+      (value) => ({ok: true as const, value}),
+      (error) => ({ok: false as const, error}),
+    )
+
+    this.cleanupPendingPromise(token, tokenResolutionPromise)
+
+    if (settledResolution.ok) return settledResolution.value
+    throw settledResolution.error
+  }
+
+  private cleanupPendingPromise(token: Token<any>, promise: Promise<unknown>): void {
+    const pendingTokenResolutionPromises = this.factoryResolutionPromises.get(token)
+    if (!pendingTokenResolutionPromises) return
+    pendingTokenResolutionPromises.delete(promise)
+    if (pendingTokenResolutionPromises.size === 0) this.factoryResolutionPromises.delete(token)
   }
 
   private async disposeOrphan(instance: unknown): Promise<void> {
@@ -514,19 +520,19 @@ export class Container {
   }
 
   private extend(chain: ResolutionFrame[], token: Token<any>, lifetime: Lifetime): ResolutionFrame[] {
-    return [...chain, { token, lifetime }]
+    return [...chain, {token, lifetime}]
   }
 
   private findOwner<T>(token: Token<T>): Owned<T> | undefined {
     // Never resolve through a disposed container (defensive: also covers a
     // child left alive past an ancestor's disposal by some future bug).
     if (this.disposed) return undefined
-    const local = this.definitions.get(token) as Definition<T> | undefined
-    if (local) {
+    const localDefinition = this.definitions.get(token) as Definition<T> | undefined
+    if (localDefinition) {
       // A token mid-unload is treated as absent so an in-flight provider that
       // resumes during unload cannot re-create/re-cache it.
       if (this.unloading.has(token)) return undefined
-      return { definition: local, owner: this }
+      return {definition: localDefinition, owner: this}
     }
     return this.parent?.findOwner(token)
   }
@@ -559,14 +565,14 @@ export class Container {
     for (const child of this.children) child.unmarkUnloadingDeep(token)
   }
 
-  private checkCircular(token: Token<any>, chain: ResolutionFrame[]): void {
+  private checkCircularDependency(token: Token<any>, chain: ResolutionFrame[]): void {
     if (chain.some((frame) => frame.token === token)) {
       throw new CircularDependencyError([...chain.map((f) => f.token), token].map(tokenName))
     }
   }
 
-  private checkCaptive(definition: Definition<any>, token: Token<any>, chain: ResolutionFrame[]): void {
-    if (definition.lifetime !== "scoped") return
+  private checkCaptiveDependency(definition: Definition<any>, token: Token<any>, chain: ResolutionFrame[]): void {
+    if (definition.lifetime !== Lifetimes.Scoped) return
     const singletonAncestor = chain.find((f) => f.lifetime === Lifetimes.Singleton)
     if (singletonAncestor) {
       throw new CaptiveDependencyError(tokenName(singletonAncestor.token), tokenName(token))
@@ -582,11 +588,11 @@ export class Container {
 
   private hasCachedInstance(token: Token<any>): boolean {
     return (
-      this.singletons.has(token) ||
+      this.singletonInstances.has(token) ||
       this.scopedInstances.has(token) ||
-      this.singletonPromises.has(token) ||
-      this.scopedPromises.has(token) ||
-      this.factoryPromises.has(token)
+      this.singletonResolutionPromises.has(token) ||
+      this.scopedResolutionPromises.has(token) ||
+      this.factoryResolutionPromises.has(token)
     )
   }
 
@@ -604,18 +610,18 @@ export class Container {
     const affected = new Set<Disposable>()
 
     for (const token of tokens) {
-      for (const map of [this.singletons, this.scopedInstances]) {
+      for (const map of [this.singletonInstances, this.scopedInstances]) {
         const instance = map.get(token)
         map.delete(token) // remove cache entry even if disposal later throws
         if (isDisposable(instance)) affected.add(instance)
       }
       // Orphan any in-flight resolution: removing from the promise map makes
       // its identity guard fail, so it disposes its own result.
-      const p1 = this.singletonPromises.get(token)
-      const p2 = this.scopedPromises.get(token)
-      this.singletonPromises.delete(token)
-      this.scopedPromises.delete(token)
-      const factorySet = this.factoryPromises.get(token)
+      const p1 = this.singletonResolutionPromises.get(token)
+      const p2 = this.scopedResolutionPromises.get(token)
+      this.singletonResolutionPromises.delete(token)
+      this.scopedResolutionPromises.delete(token)
+      const factorySet = this.factoryResolutionPromises.get(token)
       const factoryPromises = factorySet ? [...factorySet] : []
       for (const p of [p1, p2, ...factoryPromises]) {
         if (p) {
@@ -650,6 +656,7 @@ export class Container {
 
   // ── Disposal ──────────────────────────────────────────────────────────
 
+  // TODO: check
   private trackDisposable(value: unknown): void {
     if (isDisposable(value) && !this.disposableSet.has(value)) {
       this.disposableSet.add(value)
@@ -694,10 +701,10 @@ export class Container {
 
     // Await in-flight resolutions; their guards see disposed === true and
     // dispose the orphaned result before this call returns.
-    const factoryPending = [...this.factoryPromises.values()].flatMap((s) => [...s])
+    const factoryPending = [...this.factoryResolutionPromises.values()].flatMap((s) => [...s])
     const pending = [
-      ...this.singletonPromises.values(),
-      ...this.scopedPromises.values(),
+      ...this.singletonResolutionPromises.values(),
+      ...this.scopedResolutionPromises.values(),
       ...factoryPending,
     ]
     for (const p of pending) {
@@ -707,9 +714,9 @@ export class Container {
         /* orphaned resolution */
       }
     }
-    this.singletonPromises.clear()
-    this.scopedPromises.clear()
-    this.factoryPromises.clear()
+    this.singletonResolutionPromises.clear()
+    this.scopedResolutionPromises.clear()
+    this.factoryResolutionPromises.clear()
 
     for (let i = this.disposables.length - 1; i >= 0; i--) {
       const disposable = this.disposables[i]
@@ -723,7 +730,7 @@ export class Container {
 
     this.disposables = []
     this.disposableSet.clear()
-    this.singletons.clear()
+    this.singletonInstances.clear()
     this.scopedInstances.clear()
 
     this.parent?.children.delete(this)
