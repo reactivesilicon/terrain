@@ -23,12 +23,22 @@ export type AsyncProvider<T> = (resolver: AsyncResolver) => Promise<T>
 export type Provider<T> = SyncProvider<T> | AsyncProvider<T>
 
 /** Immutable once built (frozen by Module). */
-export type Definition<T> = Readonly<{
+type BaseDefinition<T> = Readonly<{
   token: Token<T>
   lifetime: Lifetime
-  provider: Provider<T>
-  async: boolean
 }>
+
+export type SyncDefinition<T> = BaseDefinition<T> & Readonly<{
+  async: false
+  provider: SyncProvider<T>
+}>
+
+export type AsyncDefinition<T> = BaseDefinition<T> & Readonly<{
+  async: true
+  provider: AsyncProvider<T>
+}>
+
+export type Definition<T> = SyncDefinition<T> | AsyncDefinition<T>
 
 export interface Disposable {
   dispose(): void | Promise<void>

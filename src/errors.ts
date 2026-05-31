@@ -32,6 +32,13 @@ export class AsyncProviderError extends DIError {
   }
 }
 
+export class SyncProviderError extends DIError {
+  constructor(name: string) {
+    super(`Provider for token '${name}' is synchronous. Use get() instead of getAsync().`)
+    this.name = "SyncProviderError"
+  }
+}
+
 export class DisposedContainerError extends DIError {
   constructor() {
     super("Container has been disposed and can no longer be used.")

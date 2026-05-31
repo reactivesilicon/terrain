@@ -5,16 +5,17 @@ import {
   DefinitionInUseError,
   DisposedContainerError,
   DuplicateDefinitionError,
+  isFrameworkError,
   LifecycleOperationError,
   MissingDependencyError,
   ModuleOwnershipError,
   ProviderExecutionError,
   ShadowedDefinitionError,
-  isFrameworkError,
+  SyncProviderError,
 } from "./errors"
 
 import {
-  type AsyncProvider,
+  type AsyncDefinition,
   type AsyncResolver,
   type ContainerOptions,
   type Definition,
@@ -22,7 +23,7 @@ import {
   type Lifetime,
   Lifetimes,
   type LoadOptions,
-  type SyncProvider,
+  type SyncDefinition,
   type SyncResolver,
 } from "./types"
 
@@ -40,10 +41,6 @@ function isDisposable(value: unknown): value is Disposable {
   )
 }
 
-function isThenable(value: unknown): value is Promise<unknown> {
-  return value != null && typeof (value as { then?: unknown }).then === "function"
-}
-
 /** Flatten nested AggregateErrors into a single list of leaf errors. */
 function flattenErrors(errors: unknown[]): unknown[] {
   const out: unknown[] = []
@@ -59,7 +56,7 @@ interface ResolutionFrame {
   lifetime: Lifetime
 }
 
-interface Owned<T> {
+interface ResolvedDefinition<T> {
   definition: Definition<T>
   owner: Container
 }
@@ -304,18 +301,18 @@ export class Container {
     }
   }
 
-  private resolveSingletonSync<T>(token: Token<T>, definition: Definition<T>, chain: ResolutionFrame[]): T {
+  private resolveSingletonSync<T>(token: Token<T>, definition: SyncDefinition<T>, chain: ResolutionFrame[]): T {
     if (this.singletonInstances.has(token)) return this.singletonInstances.get(token)
-    const instance = this.ensureSync(this.invokeProvider(definition, chain), token)
+    const instance = this.invokeProvider(definition, chain)
     this.guardAfterConstruction(token, instance)
     this.singletonInstances.set(token, instance)
     this.trackDisposable(instance)
     return instance
   }
 
-  private resolveScopedSync<T>(token: Token<T>, definition: Definition<T>, chain: ResolutionFrame[]): T {
+  private resolveScopedSync<T>(token: Token<T>, definition: SyncDefinition<T>, chain: ResolutionFrame[]): T {
     if (this.scopedInstances.has(token)) return this.scopedInstances.get(token)
-    const instance = this.ensureSync(this.invokeProvider(definition, chain), token)
+    const instance = this.invokeProvider(definition, chain)
     this.guardAfterConstruction(token, instance)
     this.scopedInstances.set(token, instance)
     this.trackDisposable(instance)
@@ -334,8 +331,8 @@ export class Container {
     }
   }
 
-  private resolveFactorySync<T>(definition: Definition<T>, chain: ResolutionFrame[]): T {
-    const instance = this.ensureSync(this.invokeProvider(definition, chain), definition.token)
+  private resolveFactorySync<T>(definition: SyncDefinition<T>, chain: ResolutionFrame[]): T {
+    const instance = this.invokeProvider(definition, chain)
     this.guardAfterConstruction(definition.token, instance)
     return instance
   }
@@ -351,6 +348,7 @@ export class Container {
 
     this.checkCircularDependency(token, chain)
     this.checkCaptiveDependency(definition, token, chain)
+    if (!definition.async) throw new SyncProviderError(tokenName(token))
 
     const next = this.extend(chain, token, definition.lifetime)
     switch (definition.lifetime) {
@@ -390,7 +388,7 @@ export class Container {
 
   private async resolveCachedAsync<T>(
     token: Token<T>,
-    definition: Definition<T>,
+    definition: AsyncDefinition<T>,
     chain: ResolutionFrame[],
     instances: Map<Token<any>, any>,
     resolutionPromises: Map<Token<any>, Promise<any>>,
@@ -423,15 +421,15 @@ export class Container {
     throw settledResolution.error
   }
 
-  private resolveSingletonAsync<T>(token: Token<T>, definition: Definition<T>, chain: ResolutionFrame[]): Promise<T> {
+  private resolveSingletonAsync<T>(token: Token<T>, definition: AsyncDefinition<T>, chain: ResolutionFrame[]): Promise<T> {
     return this.resolveCachedAsync(token, definition, chain, this.singletonInstances, this.singletonResolutionPromises)
   }
 
-  private resolveScopedAsync<T>(token: Token<T>, definition: Definition<T>, chain: ResolutionFrame[]): Promise<T> {
+  private resolveScopedAsync<T>(token: Token<T>, definition: AsyncDefinition<T>, chain: ResolutionFrame[]): Promise<T> {
     return this.resolveCachedAsync(token, definition, chain, this.scopedInstances, this.scopedResolutionPromises)
   }
 
-  private async resolveFactoryAsync<T>(definition: Definition<T>, chain: ResolutionFrame[]): Promise<T> {
+  private async resolveFactoryAsync<T>(definition: AsyncDefinition<T>, chain: ResolutionFrame[]): Promise<T> {
     const token = definition.token
 
     let pendingTokenResolutionPromises = this.factoryResolutionPromises.get(token)
@@ -486,12 +484,19 @@ export class Container {
 
   // ── Provider invocation & error context ───────────────────────────────
 
+  private invokeProvider<T>(definition: SyncDefinition<T>, chain: ResolutionFrame[]): T
+  private invokeProvider<T>(definition: AsyncDefinition<T>, chain: ResolutionFrame[]): Promise<T>
   private invokeProvider<T>(definition: Definition<T>, chain: ResolutionFrame[]): T | Promise<T> {
     try {
       if (definition.async) {
-        return (definition.provider as AsyncProvider<T>)(this.makeAsyncResolver(chain))
+        const asyncResolver= this.makeAsyncResolver(chain)
+        const asyncProvider = definition.provider
+        return asyncProvider(asyncResolver)
       }
-      return (definition.provider as SyncProvider<T>)(this.makeSyncResolver(chain))
+
+      const syncResolver = this.makeSyncResolver(chain)
+      const syncProvider = definition.provider
+      return syncProvider(syncResolver)
     } catch (error) {
       throw this.wrapProviderError(definition.token, error)
     }
@@ -523,11 +528,11 @@ export class Container {
     return [...chain, {token, lifetime}]
   }
 
-  private findOwner<T>(token: Token<T>): Owned<T> | undefined {
+  private findOwner<T>(token: Token<T>): ResolvedDefinition<T> | undefined {
     // Never resolve through a disposed container (defensive: also covers a
     // child left alive past an ancestor's disposal by some future bug).
     if (this.disposed) return undefined
-    const localDefinition = this.definitions.get(token) as Definition<T> | undefined
+    const localDefinition = this.definitions.get(token)
     if (localDefinition) {
       // A token mid-unload is treated as absent so an in-flight provider that
       // resumes during unload cannot re-create/re-cache it.
@@ -577,11 +582,6 @@ export class Container {
     if (singletonAncestor) {
       throw new CaptiveDependencyError(tokenName(singletonAncestor.token), tokenName(token))
     }
-  }
-
-  private ensureSync<T>(value: T | Promise<T>, token: Token<any>): T {
-    if (isThenable(value)) throw new AsyncProviderError(tokenName(token))
-    return value as T
   }
 
   // ── Eviction (unload) ─────────────────────────────────────────────────
