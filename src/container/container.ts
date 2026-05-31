@@ -12,7 +12,7 @@ import {
   ProviderExecutionError,
   ShadowedDefinitionError,
   SyncProviderError,
-} from "./errors"
+} from "../errors"
 
 import {
   type AsyncDefinition,
@@ -25,15 +25,15 @@ import {
   type LoadOptions, type ResolutionFrame,
   type SyncDefinition,
   type SyncResolver,
-} from "./types"
+} from "../types"
 
-import type {Token} from "./token"
+import type {Token} from "../token"
 
-import type {Module} from "./module"
-import {flattenErrors, isDisposable, tokenName} from "./utils";
-import {DisposableRegistry} from "./container/disposable-registry";
-import {InstanceKinds, ResolutionCache} from "./container/resolution-cache";
-import type {ResolutionHost} from "./container/resolution-host";
+import type {Module} from "../module"
+import {flattenErrors, isDisposable, tokenName} from "../utils";
+import {DisposableRegistry} from "./disposable-registry";
+import {InstanceKinds, ResolutionCache} from "./resolution-cache";
+import type {ResolutionHost} from "./resolution-host";
 
 interface ResolvedDefinition<T> {
   definition: Definition<T>

@@ -1,4 +1,4 @@
-export * from "./container"
+export * from "./container/container"
 export * from "./errors"
 export * from "./module"
 export * from "./token"
