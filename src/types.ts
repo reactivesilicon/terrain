@@ -58,3 +58,8 @@ export interface ContainerOptions {
    *  they surface via the AggregateError those methods throw. */
   onDisposeError?: (error: unknown) => void
 }
+
+export interface ResolutionFrame {
+  token: Token<any>
+  lifetime: Lifetime
+}

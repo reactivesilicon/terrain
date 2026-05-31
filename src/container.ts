@@ -22,7 +22,7 @@ import {
   type Disposable,
   type Lifetime,
   Lifetimes,
-  type LoadOptions,
+  type LoadOptions, type ResolutionFrame,
   type SyncDefinition,
   type SyncResolver,
 } from "./types"
@@ -32,33 +32,21 @@ import type {Token} from "./token"
 import type {Module} from "./module"
 import {flattenErrors, isDisposable, tokenName} from "./utils";
 import {DisposableRegistry} from "./container/disposable-registry";
-
-interface ResolutionFrame {
-  token: Token<any>
-  lifetime: Lifetime
-}
+import {InstanceKinds, ResolutionCache} from "./container/resolution-cache";
+import type {ResolutionHost} from "./container/resolution-host";
 
 interface ResolvedDefinition<T> {
   definition: Definition<T>
   owner: Container
 }
 
-// Structurally compatible with AsyncResolver (has get/getAsync/has) but does
-// not declare `implements`, so the public container API can evolve without
-// being tied to resolver semantics.
-export class Container {
+export class Container implements ResolutionHost {
   private parent?: Container
   private readonly options: ContainerOptions
 
   private definitions = new Map<Token<any>, Definition<any>>()
 
-  private singletonInstances = new Map<Token<any>, any>()
-  private singletonResolutionPromises = new Map<Token<any>, Promise<any>>()
-  private scopedInstances = new Map<Token<any>, any>()
-  private scopedResolutionPromises = new Map<Token<any>, Promise<any>>()
-  // In-flight async factory resolutions, grouped by token. Factories are
-  // caller-owned once built, but tracking lets teardown await/orphan them.
-  private factoryResolutionPromises = new Map<Token<any>, Set<Promise<any>>>()
+  private readonly resolutionCache = new ResolutionCache(this)
 
   private readonly disposables = new DisposableRegistry()
 
@@ -79,6 +67,18 @@ export class Container {
     this.options = options
   }
 
+  isUnloading(token: Token<any>): boolean { return this.unloading.has(token) }
+
+  trackDisposable(instance: unknown): void { this.disposables.track(instance) }
+
+  invokeProviderSync<T>(definition: SyncDefinition<T>, chain: ResolutionFrame[]): T {
+    return this.invokeProvider(definition, chain)
+  }
+
+  invokeProviderAsync<T>(definition: AsyncDefinition<T>, chain: ResolutionFrame[]): Promise<T> {
+    return this.invokeProvider(definition, chain)
+  }
+
   private root(): Container {
     let current: Container = this
     while (current.parent) current = current.parent
@@ -86,7 +86,7 @@ export class Container {
   }
 
   // True if this container or any ancestor is disposed.
-  private isTreeDisposed(): boolean {
+  isTreeDisposed(): boolean {
     let current: Container | undefined = this
     while (current) {
       if (current.disposed) return true
@@ -283,20 +283,20 @@ export class Container {
   }
 
   private resolveSingletonSync<T>(token: Token<T>, definition: SyncDefinition<T>, chain: ResolutionFrame[]): T {
-    if (this.singletonInstances.has(token)) return this.singletonInstances.get(token)
+    const cached = this.resolutionCache.getSyncInstance(InstanceKinds.Singleton, token)
+    if (cached.has) return cached.value
     const instance = this.invokeProvider(definition, chain)
     this.guardAfterConstruction(token, instance)
-    this.singletonInstances.set(token, instance)
-    this.disposables.track(instance)
+    this.resolutionCache.commitSyncInstance(InstanceKinds.Singleton, token, instance)
     return instance
   }
 
   private resolveScopedSync<T>(token: Token<T>, definition: SyncDefinition<T>, chain: ResolutionFrame[]): T {
-    if (this.scopedInstances.has(token)) return this.scopedInstances.get(token)
+    const cached = this.resolutionCache.getSyncInstance(InstanceKinds.Scoped, token)
+    if (cached.has) return cached.value
     const instance = this.invokeProvider(definition, chain)
     this.guardAfterConstruction(token, instance)
-    this.scopedInstances.set(token, instance)
-    this.disposables.track(instance)
+    this.resolutionCache.commitSyncInstance(InstanceKinds.Scoped, token, instance)
     return instance
   }
 
@@ -334,11 +334,11 @@ export class Container {
     const next = this.extend(chain, token, definition.lifetime)
     switch (definition.lifetime) {
       case Lifetimes.Singleton:
-        return owner.resolveSingletonAsync(token, definition, next)
+        return owner.resolutionCache.resolveCachedAsync(InstanceKinds.Singleton, token, definition, next)
       case Lifetimes.Scoped:
-        return this.resolveScopedAsync(token, definition, next)
+        return this.resolutionCache.resolveCachedAsync(InstanceKinds.Scoped, token, definition, next)
       case Lifetimes.Factory:
-        return this.resolveFactoryAsync(definition, next)
+        return this.resolutionCache.resolveFactoryAsync(definition, next)
       default: {
         const _exhaustive: never = definition.lifetime
         throw new Error(`Unknown lifetime: ${String(_exhaustive)}`)
@@ -346,116 +346,9 @@ export class Container {
     }
   }
 
-  /**
-   * Guards a cache-writing async resolution: runs the build, then refuses to commit if the tree was torn down / token unloaded / a newer resolution won.
-   * */
-  private async resolveGuarded<T>({token, build, isStale}: {
-    token: Token<any>,
-    build: () => Promise<T>,
-    isStale: () => boolean,
-  }): Promise<T> {
-    let instance: T
-    try {
-      instance = await build()
-    } catch (error) {
-      throw this.wrapProviderError(token, error)
-    }
-    if (this.isTreeDisposed() || this.unloading.has(token) || isStale()) {
-      await this.disposeOrphan(instance)
-      throw new DisposedContainerError()
-    }
-    return instance
-  }
-
-  private async resolveCachedAsync<T>(
-    token: Token<T>,
-    definition: AsyncDefinition<T>,
-    chain: ResolutionFrame[],
-    instances: Map<Token<any>, any>,
-    resolutionPromises: Map<Token<any>, Promise<any>>,
-  ): Promise<T> {
-    if (instances.has(token)) return instances.get(token)
-    const pending = resolutionPromises.get(token)
-    if (pending) return pending
-
-    let promise: Promise<T>
-    promise = this.resolveGuarded({
-      token: token,
-      build: async () => await this.invokeProvider(definition, chain),
-      isStale: () => resolutionPromises.get(token) !== promise,
-    })
-    resolutionPromises.set(token, promise)
-
-    const settledResolution = await promise.then(
-      (value) => ({ ok: true as const, value }),
-      (error) => ({ ok: false as const, error }),
-    )
-
-    if (settledResolution.ok) {
-      instances.set(token, settledResolution.value)
-      this.disposables.track(settledResolution.value)
-      resolutionPromises.delete(token)
-      return settledResolution.value
-    }
-
-    if (resolutionPromises.get(token) === promise) resolutionPromises.delete(token)
-    throw settledResolution.error
-  }
-
-  private resolveSingletonAsync<T>(token: Token<T>, definition: AsyncDefinition<T>, chain: ResolutionFrame[]): Promise<T> {
-    return this.resolveCachedAsync(token, definition, chain, this.singletonInstances, this.singletonResolutionPromises)
-  }
-
-  private resolveScopedAsync<T>(token: Token<T>, definition: AsyncDefinition<T>, chain: ResolutionFrame[]): Promise<T> {
-    return this.resolveCachedAsync(token, definition, chain, this.scopedInstances, this.scopedResolutionPromises)
-  }
-
-  private async resolveFactoryAsync<T>(definition: AsyncDefinition<T>, chain: ResolutionFrame[]): Promise<T> {
-    const token = definition.token
-
-    let pendingTokenResolutionPromises = this.factoryResolutionPromises.get(token)
-    if (!pendingTokenResolutionPromises) {
-      pendingTokenResolutionPromises = new Set()
-      this.factoryResolutionPromises.set(token, pendingTokenResolutionPromises)
-    }
-
-    const tokenResolutionPromise = this.resolveGuarded({
-      token: token,
-      build: async () => await this.invokeProvider(definition, chain),
-      isStale: () => false,
-    })
-    pendingTokenResolutionPromises.add(tokenResolutionPromise)
-
-    const settledResolution = await tokenResolutionPromise.then(
-      (value) => ({ok: true as const, value}),
-      (error) => ({ok: false as const, error}),
-    )
-
-    this.cleanupPendingPromise(token, tokenResolutionPromise)
-
-    if (settledResolution.ok) return settledResolution.value
-    throw settledResolution.error
-  }
-
-  private cleanupPendingPromise(token: Token<any>, promise: Promise<unknown>): void {
-    const pendingTokenResolutionPromises = this.factoryResolutionPromises.get(token)
-    if (!pendingTokenResolutionPromises) return
-    pendingTokenResolutionPromises.delete(promise)
-    if (pendingTokenResolutionPromises.size === 0) this.factoryResolutionPromises.delete(token)
-  }
-
-  private async disposeOrphan(instance: unknown): Promise<void> {
-    if (!isDisposable(instance)) return
-    try {
-      await instance.dispose()
-    } catch (error) {
-      this.notifyDisposeError(error)
-    }
-  }
-
   // Reporting hook is observational only: it must never alter lifecycle
   // behavior, so a throwing hook is swallowed.
-  private notifyDisposeError(error: unknown): void {
+  notifyDisposeError(error: unknown): void {
     try {
       this.options.onDisposeError?.(error)
     } catch {
@@ -483,7 +376,7 @@ export class Container {
     }
   }
 
-  private wrapProviderError(token: Token<any>, error: unknown): unknown {
+  wrapProviderError(token: Token<any>, error: unknown): unknown {
     if (isFrameworkError(error)) return error
     return new ProviderExecutionError(tokenName(token), error)
   }
@@ -567,18 +460,8 @@ export class Container {
 
   // ── Eviction (unload) ─────────────────────────────────────────────────
 
-  private hasCachedInstance(token: Token<any>): boolean {
-    return (
-      this.singletonInstances.has(token) ||
-      this.scopedInstances.has(token) ||
-      this.singletonResolutionPromises.has(token) ||
-      this.scopedResolutionPromises.has(token) ||
-      this.factoryResolutionPromises.has(token)
-    )
-  }
-
   private hasCachedInstanceDeep(token: Token<any>): boolean {
-    if (this.hasCachedInstance(token)) return true
+    if (this.resolutionCache.hasCached(token)) return true
     for (const child of this.children) {
       if (child.hasCachedInstanceDeep(token)) return true
     }
@@ -589,32 +472,13 @@ export class Container {
   // reverse creation order (dependents before dependencies), matching dispose().
   private async evictTokensLocal(tokens: Set<Token<any>>, errors: unknown[]): Promise<void> {
     const affected = new Set<Disposable>()
-
     for (const token of tokens) {
-      for (const map of [this.singletonInstances, this.scopedInstances]) {
-        const instance = map.get(token)
-        map.delete(token) // remove cache entry even if disposal later throws
-        if (isDisposable(instance)) affected.add(instance)
+      for (const d of this.resolutionCache.evictInstances(token)) affected.add(d)
+      for (const p of this.resolutionCache.pendingForToken(token)) {
+        try { await p } catch { /* orphaned resolution */ }
       }
-      // Orphan any in-flight resolution: removing from the promise map makes
-      // its identity guard fail, so it disposes its own result.
-      const p1 = this.singletonResolutionPromises.get(token)
-      const p2 = this.scopedResolutionPromises.get(token)
-      this.singletonResolutionPromises.delete(token)
-      this.scopedResolutionPromises.delete(token)
-      const factorySet = this.factoryResolutionPromises.get(token)
-      const factoryPromises = factorySet ? [...factorySet] : []
-      for (const p of [p1, p2, ...factoryPromises]) {
-        if (p) {
-          try {
-            await p
-          } catch {
-            /* orphaned resolution rejection is expected */
-          }
-        }
-      }
+      this.resolutionCache.deletePromisesForToken(token)
     }
-
     await this.disposables.disposeReverse({targets: affected, onError: (e) => errors.push(e)})
   }
 
@@ -655,29 +519,14 @@ export class Container {
     }
     this.children.clear()
 
-    // Await in-flight resolutions; their guards see disposed === true and
-    // dispose the orphaned result before this call returns.
-    const factoryPending = [...this.factoryResolutionPromises.values()].flatMap((s) => [...s])
-    const pending = [
-      ...this.singletonResolutionPromises.values(),
-      ...this.scopedResolutionPromises.values(),
-      ...factoryPending,
-    ]
-    for (const p of pending) {
-      try {
-        await p
-      } catch {
-        /* orphaned resolution */
-      }
+    for (const resolutionPromise of this.resolutionCache.allPendingResolutionPromises()) {
+      try { await resolutionPromise } catch { /* orphaned resolution */ }
     }
-    this.singletonResolutionPromises.clear()
-    this.scopedResolutionPromises.clear()
-    this.factoryResolutionPromises.clear()
+    this.resolutionCache.clearResolutionPromises()
 
     await this.disposables.disposeReverse({onError: (e) => errors.push(e)})
 
-    this.singletonInstances.clear()
-    this.scopedInstances.clear()
+    this.resolutionCache.clearInstances()
 
     this.parent?.children.delete(this)
 
