@@ -31,6 +31,7 @@ import type {Token} from "./token"
 
 import type {Module} from "./module"
 import {flattenErrors, isDisposable, tokenName} from "./utils";
+import {DisposableRegistry} from "./container/disposable-registry";
 
 interface ResolutionFrame {
   token: Token<any>
@@ -59,8 +60,7 @@ export class Container {
   // caller-owned once built, but tracking lets teardown await/orphan them.
   private factoryResolutionPromises = new Map<Token<any>, Set<Promise<any>>>()
 
-  private disposables: Disposable[] = []
-  private disposableSet = new Set<Disposable>()
+  private readonly disposables = new DisposableRegistry()
 
   private children = new Set<Container>()
   private disposed = false
@@ -287,7 +287,7 @@ export class Container {
     const instance = this.invokeProvider(definition, chain)
     this.guardAfterConstruction(token, instance)
     this.singletonInstances.set(token, instance)
-    this.trackDisposable(instance)
+    this.disposables.track(instance)
     return instance
   }
 
@@ -296,7 +296,7 @@ export class Container {
     const instance = this.invokeProvider(definition, chain)
     this.guardAfterConstruction(token, instance)
     this.scopedInstances.set(token, instance)
-    this.trackDisposable(instance)
+    this.disposables.track(instance)
     return instance
   }
 
@@ -393,7 +393,7 @@ export class Container {
 
     if (settledResolution.ok) {
       instances.set(token, settledResolution.value)
-      this.trackDisposable(settledResolution.value)
+      this.disposables.track(settledResolution.value)
       resolutionPromises.delete(token)
       return settledResolution.value
     }
@@ -615,17 +615,7 @@ export class Container {
       }
     }
 
-    // Dispose in reverse creation order, filtered to the affected instances.
-    for (let i = this.disposables.length - 1; i >= 0; i--) {
-      const disposable = this.disposables[i]
-      if (disposable === undefined || !affected.has(disposable)) continue
-      this.removeDisposable(disposable)
-      try {
-        await disposable.dispose()
-      } catch (error) {
-        errors.push(error)
-      }
-    }
+    await this.disposables.disposeReverse({targets: affected, onError: (e) => errors.push(e)})
   }
 
   private async evictTokensDeep(tokens: Set<Token<any>>, errors: unknown[]): Promise<void> {
@@ -636,21 +626,6 @@ export class Container {
   }
 
   // ── Disposal ──────────────────────────────────────────────────────────
-
-  // TODO: check
-  private trackDisposable(value: unknown): void {
-    if (isDisposable(value) && !this.disposableSet.has(value)) {
-      this.disposableSet.add(value)
-      this.disposables.push(value)
-    }
-  }
-
-  private removeDisposable(value: Disposable): void {
-    if (this.disposableSet.delete(value)) {
-      const index = this.disposables.indexOf(value)
-      if (index >= 0) this.disposables.splice(index, 1)
-    }
-  }
 
   async dispose(): Promise<void> {
     if (this.disposed) return
@@ -699,18 +674,8 @@ export class Container {
     this.scopedResolutionPromises.clear()
     this.factoryResolutionPromises.clear()
 
-    for (let i = this.disposables.length - 1; i >= 0; i--) {
-      const disposable = this.disposables[i]
-      if (disposable === undefined) continue
-      try {
-        await disposable.dispose()
-      } catch (error) {
-        errors.push(error)
-      }
-    }
+    await this.disposables.disposeReverse({onError: (e) => errors.push(e)})
 
-    this.disposables = []
-    this.disposableSet.clear()
     this.singletonInstances.clear()
     this.scopedInstances.clear()
 
