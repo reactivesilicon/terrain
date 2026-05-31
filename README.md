@@ -9,7 +9,7 @@ No decorators. No reflection. No framework dependency. Just a small, explicit, D
 
 ```sh
 bun add terrain
-````
+```
 
 Or with npm:
 
@@ -69,9 +69,9 @@ const container = new Container();
 
 container.load(appModule);
 
-const users = container.get(UserServiceToken);
+const userService = container.get(UserServiceToken);
 
-users.createUser("Ada");
+userService.createUser("Ada");
 ```
 
 ## Tokens
@@ -98,7 +98,7 @@ const config = container.get(ConfigToken);
 Modules group dependency definitions.
 
 ```ts
-const module = createModule((module) => {
+const appModule = createModule((module) => {
   module.single(ConfigToken, () => ({
     databaseUrl: "postgres://localhost/app",
   }));
@@ -205,7 +205,7 @@ Use explicit async registration methods for async providers.
 ```ts
 const DatabaseToken = createToken<Database>("Database");
 
-const module = createModule((module) => {
+const dbModule = createModule((module) => {
   module.singleAsync(DatabaseToken, async () => {
     const db = new Database();
 
@@ -364,7 +364,7 @@ Throws `MissingDependencyError`.
 const AToken = createToken<A>("A");
 const BToken = createToken<B>("B");
 
-const module = createModule((module) => {
+const appModule = createModule((module) => {
   module.single(AToken, (resolver) => new A(resolver.get(BToken)));
   module.single(BToken, (resolver) => new B(resolver.get(AToken)));
 });
@@ -448,7 +448,7 @@ import {
 All framework errors extend `DIError`.
 
 ```ts
-import { DIError } from "terrain";
+import { DIError, isFrameworkError } from "terrain";
 
 try {
   container.get(Token);
@@ -458,6 +458,8 @@ try {
   }
 }
 ```
+
+`isFrameworkError(error)` is a predicate equivalent to `error instanceof DIError`. Useful when you want to check without importing the base class.
 
 Provider-thrown errors are wrapped in `ProviderExecutionError`, unless they are already framework errors.
 
@@ -491,12 +493,16 @@ Creates a module.
 
 ```ts
 const container = new Container();
+const container = new Container({ onDisposeError: (error) => console.error(error) });
 ```
+
+`onDisposeError` is called when an in-flight async instance finishes constructing after its token was already unloaded or its container disposed. The result is treated as an orphan and disposed immediately. Errors from that orphan disposal are reported here. Errors from normal `dispose()` or `unload()` are thrown directly from those methods, not reported via this callback.
 
 Methods:
 
 ```ts
 container.load(module);
+container.load(module, { override: true });
 await container.unload(module);
 
 container.get(Token);
