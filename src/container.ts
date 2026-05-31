@@ -30,26 +30,7 @@ import {
 import type {Token} from "./token"
 
 import type {Module} from "./module"
-import {tokenName} from "./utils";
-
-function isDisposable(value: unknown): value is Disposable {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "dispose" in value &&
-    typeof (value as Disposable).dispose === "function"
-  )
-}
-
-/** Flatten nested AggregateErrors into a single list of leaf errors. */
-function flattenErrors(errors: unknown[]): unknown[] {
-  const out: unknown[] = []
-  for (const error of errors) {
-    if (error instanceof AggregateError) out.push(...flattenErrors(error.errors))
-    else out.push(error)
-  }
-  return out
-}
+import {flattenErrors, isDisposable, tokenName} from "./utils";
 
 interface ResolutionFrame {
   token: Token<any>
