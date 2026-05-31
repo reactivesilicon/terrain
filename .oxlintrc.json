@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "rules": {
+    "typescript/consistent-type-definitions": "off",
+    "no-warning-comments": "off",
+    "func-style": "off",
+    "sort-keys": "off",
+    "class-methods-use-this": "off",
+    "unicorn/prefer-ternary": "off",
+    "promise/prefer-await-to-then": "off",
+    "no-plusplus": ["error", { "allowForLoopAfterthoughts": true }]
+  }
+}
