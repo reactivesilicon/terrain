@@ -1,3 +1,5 @@
+import { DuplicateDefinitionError } from "./errors";
+import type { Token } from "./token";
 import {
   type AsyncDefinition,
   type AsyncProvider,
@@ -6,101 +8,91 @@ import {
   Lifetimes,
   type SyncDefinition,
   type SyncProvider,
-} from "./types"
-import type { Token } from "./token"
-import { DuplicateDefinitionError } from "./errors"
+} from "./types";
 
 function tokenName(token: symbol): string {
-  return token.description || "UnknownToken"
+  return token.description || "UnknownToken";
 }
 
 // Non-exported brand: prevents a plain object literal from satisfying Module
 // structurally. Modules can only come from createModule()/ModuleBuilder.
-declare const MODULE_BRAND: unique symbol
+declare const MODULE_BRAND: unique symbol;
 
 /** Public, read-only view of a module. The concrete class is not exported, and
  *  the brand cannot be produced outside this module, so there is no ordinary
  *  construction path that bypasses builder validation. */
 export interface Module {
-  readonly [MODULE_BRAND]: true
-  entries(): IterableIterator<[Token<any>, Definition<any>]>
-  keys(): IterableIterator<Token<any>>
+  readonly [MODULE_BRAND]: true;
+  entries(): IterableIterator<[Token<any>, Definition<any>]>;
+  keys(): IterableIterator<Token<any>>;
 }
 
 class BuiltModule implements Module {
   // Brand is phantom: declared on the type, asserted here, never read at runtime.
-  declare readonly [MODULE_BRAND]: true
+  declare readonly [MODULE_BRAND]: true;
 
-  private readonly _definitions: ReadonlyMap<Token<any>, Definition<any>>
+  private readonly _definitions: ReadonlyMap<Token<any>, Definition<any>>;
 
   constructor(definitions: ReadonlyMap<Token<any>, Definition<any>>) {
     this._definitions = new Map(
       [...definitions].map(([token, definition]) => [token, Object.freeze({ ...definition })]),
-    )
+    );
   }
 
   entries(): IterableIterator<[Token<any>, Definition<any>]> {
-    return this._definitions.entries()
+    return this._definitions.entries();
   }
 
   keys(): IterableIterator<Token<any>> {
-    return this._definitions.keys()
+    return this._definitions.keys();
   }
 }
 
 export class ModuleBuilder {
-  private readonly definitions = new Map<Token<any>, Definition<any>>()
+  private readonly definitions = new Map<Token<any>, Definition<any>>();
 
-  private add<T>(
-    token: Token<T>,
-    lifetime: Lifetime,
-    provider: SyncProvider<T>,
-  ): void {
+  private add<T>(token: Token<T>, lifetime: Lifetime, provider: SyncProvider<T>): void {
     if (this.definitions.has(token)) {
-      throw new DuplicateDefinitionError(tokenName(token))
+      throw new DuplicateDefinitionError(tokenName(token));
     }
-    const definition: SyncDefinition<T> = { token, lifetime, provider, async: false }
-    this.definitions.set(token, definition)
+    const definition: SyncDefinition<T> = { token, lifetime, provider, async: false };
+    this.definitions.set(token, definition);
   }
 
-  private addAsync<T>(
-    token: Token<T>,
-    lifetime: Lifetime,
-    provider: AsyncProvider<T>,
-  ): void {
+  private addAsync<T>(token: Token<T>, lifetime: Lifetime, provider: AsyncProvider<T>): void {
     if (this.definitions.has(token)) {
-      throw new DuplicateDefinitionError(tokenName(token))
+      throw new DuplicateDefinitionError(tokenName(token));
     }
-    const definition: AsyncDefinition<T> = { token, lifetime, provider, async: true }
-    this.definitions.set(token, definition)
+    const definition: AsyncDefinition<T> = { token, lifetime, provider, async: true };
+    this.definitions.set(token, definition);
   }
 
   single<T>(token: Token<T>, provider: SyncProvider<T>): void {
-    this.add(token, Lifetimes.Singleton, provider)
+    this.add(token, Lifetimes.Singleton, provider);
   }
   singleAsync<T>(token: Token<T>, provider: AsyncProvider<T>): void {
-    this.addAsync(token, Lifetimes.Singleton, provider)
+    this.addAsync(token, Lifetimes.Singleton, provider);
   }
   factory<T>(token: Token<T>, provider: SyncProvider<T>): void {
-    this.add(token, Lifetimes.Factory, provider)
+    this.add(token, Lifetimes.Factory, provider);
   }
   factoryAsync<T>(token: Token<T>, provider: AsyncProvider<T>): void {
-    this.addAsync(token, Lifetimes.Factory, provider)
+    this.addAsync(token, Lifetimes.Factory, provider);
   }
   scoped<T>(token: Token<T>, provider: SyncProvider<T>): void {
-    this.add(token, Lifetimes.Scoped, provider)
+    this.add(token, Lifetimes.Scoped, provider);
   }
   scopedAsync<T>(token: Token<T>, provider: AsyncProvider<T>): void {
-    this.addAsync(token, Lifetimes.Scoped, provider)
+    this.addAsync(token, Lifetimes.Scoped, provider);
   }
 
   build(): Module {
-    return new BuiltModule(this.definitions)
+    return new BuiltModule(this.definitions);
   }
 }
 
 export function createModule(setup: (builder: ModuleBuilder) => void): Module {
-  const builder = new ModuleBuilder()
-  setup(builder)
-  return builder.build()
+  const builder = new ModuleBuilder();
+  setup(builder);
+  return builder.build();
 }

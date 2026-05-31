@@ -1,16 +1,16 @@
-import type {Disposable} from "./types";
+import type { Disposable } from "./types";
 
 export function tokenName(token: symbol): string {
-  return token.description || "UnknownToken"
+  return token.description || "UnknownToken";
 }
 
 export function flattenErrors(errors: unknown[]): unknown[] {
-  const out: unknown[] = []
+  const out: unknown[] = [];
   for (const error of errors) {
-    if (error instanceof AggregateError) out.push(...flattenErrors(error.errors))
-    else out.push(error)
+    if (error instanceof AggregateError) out.push(...flattenErrors(error.errors));
+    else out.push(error);
   }
-  return out
+  return out;
 }
 
 export function isDisposable(value: unknown): value is Disposable {
@@ -19,5 +19,5 @@ export function isDisposable(value: unknown): value is Disposable {
     value !== null &&
     "dispose" in value &&
     typeof (value as Disposable).dispose === "function"
-  )
+  );
 }

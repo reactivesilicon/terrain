@@ -1,4 +1,3 @@
-
 # terrain
 
 A pragmatic TypeScript Dependency Injection framework
@@ -23,17 +22,17 @@ npm install terrain
 
 It gives you:
 
-* typed tokens
-* singleton, factory, and scoped lifetimes
-* sync and async providers
-* module-based registration
-* child scopes
-* deterministic disposal
-* circular dependency detection
-* captive dependency detection
-* lazy injection helpers
-* safe module unload/reload
-* lifecycle guards for async teardown
+- typed tokens
+- singleton, factory, and scoped lifetimes
+- sync and async providers
+- module-based registration
+- child scopes
+- deterministic disposal
+- circular dependency detection
+- captive dependency detection
+- lazy injection helpers
+- safe module unload/reload
+- lifecycle guards for async teardown
 
 ## Quick start
 

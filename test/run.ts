@@ -6,16 +6,15 @@
  *   npx tsx test/run.ts
  */
 
-import "./runs/lifetimes"
-import "./runs/resolution"
-import "./runs/scopes"
-import "./runs/async"
-import "./runs/disposal"
-import "./runs/lifecycle"
-import "./runs/errors"
-import "./runs/modules"
-import "./runs/concurrency"
+import "./runs/lifetimes";
+import "./runs/resolution";
+import "./runs/scopes";
+import "./runs/async";
+import "./runs/disposal";
+import "./runs/lifecycle";
+import "./runs/errors";
+import "./runs/modules";
+import "./runs/concurrency";
+import { runAll } from "./harness";
 
-import { runAll } from "./harness"
-
-void runAll()
+void runAll();

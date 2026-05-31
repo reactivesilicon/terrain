@@ -7,7 +7,7 @@
   "experimentalSortImports": {
     "ignoreCase": true,
     "newlinesBetween": true,
-    "order": "asc"
+    "order": "asc",
   },
   "experimentalSortPackageJson": true,
   "jsxSingleQuote": false,
@@ -17,5 +17,5 @@
   "singleQuote": false,
   "tabWidth": 2,
   "trailingComma": "all",
-  "useTabs": false
+  "useTabs": false,
 }

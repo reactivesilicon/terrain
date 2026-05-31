@@ -1,53 +1,55 @@
-import type {Token} from "./token"
+import type { Token } from "./token";
 
 export const Lifetimes = {
   Singleton: "singleton",
   Factory: "factory",
   Scoped: "scoped",
-} as const
-export type Lifetime = typeof Lifetimes[keyof typeof Lifetimes]
+} as const;
+export type Lifetime = (typeof Lifetimes)[keyof typeof Lifetimes];
 
 /** Resolver handed to synchronous providers — no getAsync. */
 export interface SyncResolver {
-  get<T>(token: Token<T>): T
-  has<T>(token: Token<T>): boolean
+  get<T>(token: Token<T>): T;
+  has<T>(token: Token<T>): boolean;
 }
 
 /** Resolver handed to async providers. */
 export interface AsyncResolver extends SyncResolver {
-  getAsync<T>(token: Token<T>): Promise<T>
+  getAsync<T>(token: Token<T>): Promise<T>;
 }
 
-export type SyncProvider<T> = (resolver: SyncResolver) => T
-export type AsyncProvider<T> = (resolver: AsyncResolver) => Promise<T>
-export type Provider<T> = SyncProvider<T> | AsyncProvider<T>
+export type SyncProvider<T> = (resolver: SyncResolver) => T;
+export type AsyncProvider<T> = (resolver: AsyncResolver) => Promise<T>;
+export type Provider<T> = SyncProvider<T> | AsyncProvider<T>;
 
 /** Immutable once built (frozen by Module). */
 type BaseDefinition<T> = Readonly<{
-  token: Token<T>
-  lifetime: Lifetime
-}>
+  token: Token<T>;
+  lifetime: Lifetime;
+}>;
 
-export type SyncDefinition<T> = BaseDefinition<T> & Readonly<{
-  async: false
-  provider: SyncProvider<T>
-}>
+export type SyncDefinition<T> = BaseDefinition<T> &
+  Readonly<{
+    async: false;
+    provider: SyncProvider<T>;
+  }>;
 
-export type AsyncDefinition<T> = BaseDefinition<T> & Readonly<{
-  async: true
-  provider: AsyncProvider<T>
-}>
+export type AsyncDefinition<T> = BaseDefinition<T> &
+  Readonly<{
+    async: true;
+    provider: AsyncProvider<T>;
+  }>;
 
-export type Definition<T> = SyncDefinition<T> | AsyncDefinition<T>
+export type Definition<T> = SyncDefinition<T> | AsyncDefinition<T>;
 
 export interface Disposable {
-  dispose(): void | Promise<void>
+  dispose(): void | Promise<void>;
 }
 
 export interface LoadOptions {
   /** Replace an existing definition in THIS container. Rejected if the token
    *  is already in use (cached/in-flight anywhere in the subtree). */
-  override?: boolean
+  override?: boolean;
 }
 
 export interface ContainerOptions {
@@ -56,10 +58,10 @@ export interface ContainerOptions {
    *  token, so its result can't be cached and is disposed immediately.
    *  Disposal failures during normal dispose()/unload() are NOT reported here;
    *  they surface via the AggregateError those methods throw. */
-  onDisposeError?: (error: unknown) => void
+  onDisposeError?: (error: unknown) => void;
 }
 
 export interface ResolutionFrame {
-  token: Token<any>
-  lifetime: Lifetime
+  token: Token<any>;
+  lifetime: Lifetime;
 }
