@@ -1,7 +1,7 @@
 {
   "name": "terrain",
   "version": "0.1.0",
-  "description": "A Koin-inspired, DSL-based dependency injection framework for TypeScript. No decorators, no reflection.",
+  "description": "A pragmatic DSL-based TypeScript Dependency Injection framework. No decorators, no reflection, no framework dependency",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -9,7 +9,6 @@
     "di",
     "ioc",
     "container",
-    "koin",
     "typescript"
   ],
   "files": ["dist", "README.md", "LICENSE"],
