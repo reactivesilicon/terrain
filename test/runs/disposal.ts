@@ -26,7 +26,7 @@ suite("disposal", (test) => {
     const T = createToken<{ dispose(): void }>("singleDisp");
     let n = 0;
     const c = new Container();
-    c.load(createModule((m) => m.single(T, () => ({ dispose: () => n++ }))));
+    c.load(createModule((m) => m.single(T, () => ({ dispose: () => (n += 1) }))));
     c.get(T);
     await c.dispose();
     assertEqual(n, 1);
@@ -36,7 +36,7 @@ suite("disposal", (test) => {
     const T = createToken<{ dispose(): void }>("factoryDisp");
     let n = 0;
     const c = new Container();
-    c.load(createModule((m) => m.factory(T, () => ({ dispose: () => n++ }))));
+    c.load(createModule((m) => m.factory(T, () => ({ dispose: () => (n += 1) }))));
     for (let i = 0; i < 500; i++) c.get(T);
     await c.dispose();
     assertEqual(n, 0, "factories are caller-owned");
@@ -46,7 +46,7 @@ suite("disposal", (test) => {
     const T = createToken<{ dispose(): void }>("idem");
     let n = 0;
     const c = new Container();
-    c.load(createModule((m) => m.single(T, () => ({ dispose: () => n++ }))));
+    c.load(createModule((m) => m.single(T, () => ({ dispose: () => (n += 1) }))));
     c.get(T);
     await c.dispose();
     await c.dispose();
@@ -62,7 +62,7 @@ suite("disposal", (test) => {
       createModule((m) =>
         m.singleAsync(T, async () => {
           await delay(10);
-          return { dispose: () => n++ };
+          return { dispose: () => (n += 1) };
         }),
       ),
     );
@@ -76,7 +76,7 @@ suite("disposal", (test) => {
     const T = createToken<{ dispose(): void }>("cascade");
     let n = 0;
     const root = new Container();
-    root.load(createModule((m) => m.scoped(T, () => ({ dispose: () => n++ }))));
+    root.load(createModule((m) => m.scoped(T, () => ({ dispose: () => (n += 1) }))));
     const scope = root.createScope();
     scope.get(T);
     await root.dispose();

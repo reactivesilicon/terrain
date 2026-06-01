@@ -59,7 +59,7 @@ suite("concurrency", (test) => {
     childB.load(
       createModule((m) =>
         m.single(Local, () => {
-          localBuilt++;
+          localBuilt += 1;
           return {};
         }),
       ),
@@ -107,7 +107,7 @@ suite("concurrency", (test) => {
       const mod = createModule((m) =>
         m.scopedAsync(T, async () => {
           await delay(Math.random() * 4);
-          return { dispose: () => n++ };
+          return { dispose: () => (n += 1) };
         }),
       );
       child.load(mod);
@@ -119,11 +119,11 @@ suite("concurrency", (test) => {
       await ignore(root.dispose()); // ensure final teardown regardless of who won
       await delay(2);
 
-      if (n > 1) doubles++;
-      if (n >= 1) built++;
+      if (n > 1) doubles += 1;
+      if (n >= 1) built += 1;
       try {
         child.get(T);
-        orphansAlive++;
+        orphansAlive += 1;
       } catch {
         /* expected: disposed */
       }

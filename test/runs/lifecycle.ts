@@ -90,7 +90,7 @@ suite("lifecycle: unload", (test) => {
   test("unload removes definitions and disposes instances", async () => {
     const T = createToken<{ dispose(): void }>("ul");
     let disposed = 0;
-    const mod = createModule((m) => m.single(T, () => ({ dispose: () => disposed++ })));
+    const mod = createModule((m) => m.single(T, () => ({ dispose: () => (disposed += 1) })));
     const c = new Container();
     c.load(mod);
     c.get(T);
@@ -111,7 +111,7 @@ suite("lifecycle: unload", (test) => {
   test("unload disposes a scoped instance cached in a child scope", async () => {
     const T = createToken<{ dispose(): void }>("ulChild");
     let disposed = 0;
-    const mod = createModule((m) => m.scoped(T, () => ({ dispose: () => disposed++ })));
+    const mod = createModule((m) => m.scoped(T, () => ({ dispose: () => (disposed += 1) })));
     const root = new Container();
     root.load(mod);
     const scope = root.createScope();
@@ -171,7 +171,7 @@ suite("lifecycle: unload", (test) => {
     let bBuilds = 0;
     const modB = createModule((m) => {
       m.singleAsync(B, async () => {
-        bBuilds++;
+        bBuilds += 1;
         return { tag: "B" };
       });
     });

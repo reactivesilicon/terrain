@@ -10,7 +10,7 @@ suite("async", (test) => {
     c.load(
       createModule((m) =>
         m.singleAsync(T, async () => {
-          builds++;
+          builds += 1;
           await delay(10);
           return { n: builds };
         }),
@@ -28,7 +28,7 @@ suite("async", (test) => {
     root.load(
       createModule((m) =>
         m.scopedAsync(T, async () => {
-          builds++;
+          builds += 1;
           await delay(10);
           return {};
         }),
@@ -43,7 +43,7 @@ suite("async", (test) => {
     const T = createToken<number>("aFactory");
     let n = 0;
     const c = new Container();
-    c.load(createModule((m) => m.factoryAsync(T, async () => ++n)));
+    c.load(createModule((m) => m.factoryAsync(T, async () => (n += 1))));
     const [a, b] = await Promise.all([c.getAsync(T), c.getAsync(T)]);
     assertEqual(n, 2);
     assertNotSame(a, b);
@@ -72,7 +72,7 @@ suite("async", (test) => {
     c.load(
       createModule((m) =>
         m.singleAsync(T, async () => {
-          attempt++;
+          attempt += 1;
           if (attempt === 1) throw new Error("boom");
           return "ok";
         }),

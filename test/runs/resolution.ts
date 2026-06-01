@@ -90,7 +90,7 @@ suite("resolution", (test) => {
     c.load(
       createModule((m) => {
         m.single(S, () => {
-          built++;
+          built += 1;
           return {};
         });
         m.factory(F, () => ({}));

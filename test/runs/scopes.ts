@@ -20,7 +20,7 @@ suite("scopes", (test) => {
     const T = createToken<{ dispose(): void }>("ws");
     let disposed = 0;
     const root = new Container();
-    root.load(createModule((m) => m.scoped(T, () => ({ dispose: () => disposed++ }))));
+    root.load(createModule((m) => m.scoped(T, () => ({ dispose: () => (disposed += 1) }))));
     await root.withScope(async (scope) => {
       scope.get(T);
     });
