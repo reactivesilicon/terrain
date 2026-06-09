@@ -1,4 +1,4 @@
-import { Container, createModule, createToken } from "../../src";
+import { Container, createModule, createAsyncToken, createToken } from "../../src";
 import {
   DefinitionInUseError,
   DisposedContainerError,
@@ -62,7 +62,7 @@ suite("lifecycle: load", (test) => {
   });
 
   test("override blocked by an in-flight async factory", async () => {
-    const T = createToken<number>("ovFactory");
+    const T = createAsyncToken<number>("ovFactory");
     const c = new Container();
     c.load(
       createModule((m) =>
@@ -165,8 +165,8 @@ suite("lifecycle: unload", (test) => {
     // is parked, we unload ONLY modB. A then resumes and tries to resolve B; the
     // unload gate must make that fail rather than rebuild/re-cache B. A itself is
     // not being unloaded, so its provider runs to completion.
-    const A = createToken<{ b: { tag: string } | null }>("ulA");
-    const B = createToken<{ tag: string }>("ulB");
+    const A = createAsyncToken<{ b: { tag: string } | null }>("ulA");
+    const B = createAsyncToken<{ tag: string }>("ulB");
     let bResolveError: unknown = null;
     let bBuilds = 0;
     const modB = createModule((m) => {
@@ -203,7 +203,7 @@ suite("lifecycle: unload", (test) => {
 
 suite("lifecycle: tree-wide locking", (test) => {
   test("concurrent load during in-progress unload is rejected", async () => {
-    const T = createToken<number>("lkT");
+    const T = createAsyncToken<number>("lkT");
     const mod = createModule((m) =>
       m.singleAsync(T, async () => {
         await delay(30);
@@ -222,7 +222,7 @@ suite("lifecycle: tree-wide locking", (test) => {
   });
 
   test("child load is blocked while a root unload runs (tree-wide)", async () => {
-    const T = createToken<number>("lkRoot");
+    const T = createAsyncToken<number>("lkRoot");
     const mod = createModule((m) =>
       m.singleAsync(T, async () => {
         await delay(30);
@@ -242,7 +242,7 @@ suite("lifecycle: tree-wide locking", (test) => {
   });
 
   test("dispose during an in-progress unload is rejected", async () => {
-    const T = createToken<number>("lkDisp");
+    const T = createAsyncToken<number>("lkDisp");
     const mod = createModule((m) =>
       m.singleAsync(T, async () => {
         await delay(30);
@@ -258,7 +258,7 @@ suite("lifecycle: tree-wide locking", (test) => {
   });
 
   test("ownership: a parent disposing while a child unloads does not orphan the child", async () => {
-    const CT = createToken<{ dispose(): void }>("ownChild");
+    const CT = createAsyncToken<{ dispose(): void }>("ownChild");
     const cm = createModule((m) =>
       m.singleAsync(CT, async () => {
         await delay(30);
@@ -280,7 +280,7 @@ suite("lifecycle: tree-wide locking", (test) => {
     // Once the unload finishes, the tree can be disposed cleanly.
     await root.dispose();
     await assertThrows(
-      () => child.get(CT),
+      () => child.getAsync(CT),
       (e) => e instanceof DisposedContainerError || e instanceof Error,
     );
   });

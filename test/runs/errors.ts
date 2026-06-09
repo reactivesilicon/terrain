@@ -1,5 +1,7 @@
-import { Container, createModule, createToken } from "../../src";
+import { Container, createAsyncToken, createModule, createToken } from "../../src";
 import {
+  type AsyncResolver,
+  type AsyncToken,
   CaptiveDependencyError,
   CircularDependencyError,
   DIError,
@@ -7,6 +9,8 @@ import {
   MissingDependencyError,
   ProviderExecutionError,
   ShadowedDefinitionError,
+  SyncProviderError,
+  type SyncResolver,
 } from "../../src";
 import { suite, assert, assertEqual, assertThrows, isInstance } from "../harness";
 
@@ -145,6 +149,58 @@ suite("errors: guardrails", (test) => {
     const child = root.createScope();
     await root.dispose();
     await assertThrows(() => child.get(T), isInstance(DisposedContainerError));
+  });
+
+  test("getAsync() of a sync provider throws SyncProviderError (runtime backstop)", async () => {
+    const T = createToken<number>("sMisuse");
+    const c = new Container();
+    c.load(createModule((m) => m.single(T, () => 1)));
+    // The token brand makes this a compile error now; cast to exercise the
+    // runtime backstop that still protects untyped/JS callers.
+    await assertThrows(() => c.getAsync(T as unknown as AsyncToken<number>), isInstance(SyncProviderError));
+  });
+
+  test("token brands reject sync/async misuse at compile time", () => {
+    const S = createToken<number>("brandSync");
+    const A = createAsyncToken<number>("brandAsync");
+    // Never executed — typecheck:test fails if any of these stops being an error.
+    void function compileOnly(c: Container, sync: SyncResolver, async: AsyncResolver) {
+      // @ts-expect-error get() rejects async tokens
+      c.get(A);
+      // @ts-expect-error a sync resolver's get() rejects async tokens
+      sync.get(A);
+      // @ts-expect-error a sync resolver's has() rejects async tokens (has(t) implies resolvable)
+      sync.has(A);
+      // An async resolver can check and resolve both kinds — must compile.
+      async.has(S);
+      async.has(A);
+      async.get(S);
+      void async.getAsync(A);
+      // @ts-expect-error getAsync() rejects sync tokens
+      c.getAsync(S);
+      // @ts-expect-error inject() rejects async tokens
+      c.inject(A);
+      // @ts-expect-error injectAsync() rejects sync tokens
+      c.injectAsync(S);
+      createModule((m) => {
+        // @ts-expect-error sync builder methods reject async tokens
+        m.single(A, () => 1);
+        // @ts-expect-error async builder methods reject sync tokens
+        m.singleAsync(S, async () => 1);
+        // @ts-expect-error sync builder methods reject async tokens
+        m.factory(A, () => 1);
+        // @ts-expect-error async builder methods reject sync tokens
+        m.factoryAsync(S, async () => 1);
+        // @ts-expect-error sync builder methods reject async tokens
+        m.scoped(A, () => 1);
+        // @ts-expect-error async builder methods reject sync tokens
+        m.scopedAsync(S, async () => 1);
+      });
+    };
+    // has() accepts both kinds — must compile without error.
+    const c = new Container();
+    assertEqual(c.has(S), false);
+    assertEqual(c.has(A), false);
   });
 
   test("all framework errors extend DIError", () => {

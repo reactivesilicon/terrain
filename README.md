@@ -78,9 +78,10 @@ userService.createUser("Ada");
 Dependencies are identified by typed tokens.
 
 ```ts
-import { createToken } from "terrain";
+import { createToken, createAsyncToken } from "terrain";
 
 const ConfigToken = createToken<{ databaseUrl: string }>("Config");
+const DatabaseToken = createAsyncToken<Database>("Database");
 ```
 
 The token carries the TypeScript type of the dependency:
@@ -91,6 +92,12 @@ const config = container.get(ConfigToken);
 // config is typed as:
 // { databaseUrl: string }
 ```
+
+A token also carries its resolution mode. `createToken` makes a `Token<T>` for
+synchronous providers, resolved with `get`. `createAsyncToken` makes an
+`AsyncToken<T>` for async providers, resolved with `getAsync`. The two are not
+interchangeable: passing an async token to `get` (or registering it with a sync
+builder method) is a compile-time error.
 
 ## Modules
 
@@ -199,10 +206,10 @@ If the body throws and disposal also throws, `withScope` throws an `AggregateErr
 
 ## Async providers
 
-Use explicit async registration methods for async providers.
+Async providers use async tokens and explicit async registration methods.
 
 ```ts
-const DatabaseToken = createToken<Database>("Database");
+const DatabaseToken = createAsyncToken<Database>("Database");
 
 const dbModule = createModule((module) => {
   module.singleAsync(DatabaseToken, async () => {
@@ -221,14 +228,17 @@ Resolve async providers with `getAsync`:
 const db = await container.getAsync(DatabaseToken);
 ```
 
-Calling `get` for an async provider throws `AsyncProviderError`.
+Calling `get` with an async token is a compile-time error. For untyped
+callers that bypass the type system, the runtime still throws
+`AsyncProviderError` (and `getAsync` on a sync definition throws
+`SyncProviderError`).
 
-Available async registration methods:
+Available async registration methods (each requires an `AsyncToken`):
 
 ```ts
-module.singleAsync(Token, async (resolver) => value);
-module.factoryAsync(Token, async (resolver) => value);
-module.scopedAsync(Token, async (resolver) => value);
+module.singleAsync(AsyncToken, async (resolver) => value);
+module.factoryAsync(AsyncToken, async (resolver) => value);
+module.scopedAsync(AsyncToken, async (resolver) => value);
 ```
 
 ## Sync and async resolvers
@@ -505,12 +515,12 @@ container.load(module, { override: true });
 await container.unload(module);
 
 container.get(Token);
-await container.getAsync(Token);
+await container.getAsync(AsyncToken);
 
-container.has(Token);
+container.has(Token); // accepts Token or AsyncToken
 
 container.inject(Token);
-container.injectAsync(Token);
+container.injectAsync(AsyncToken);
 
 container.createScope();
 await container.withScope(async (scope) => {});

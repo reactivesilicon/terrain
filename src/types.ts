@@ -1,4 +1,4 @@
-import type { Token } from "./token";
+import type { AnyToken, AsyncToken, Token } from "./token";
 
 export const Lifetimes = {
   Singleton: "singleton",
@@ -7,15 +7,18 @@ export const Lifetimes = {
 } as const;
 export type Lifetime = (typeof Lifetimes)[keyof typeof Lifetimes];
 
-/** Resolver handed to synchronous providers — no getAsync. */
+/** Resolver handed to synchronous providers — no getAsync. Within a resolver,
+ *  has(t) implies t is resolvable from it, so only sync tokens are accepted. */
 export interface SyncResolver {
   get<T>(token: Token<T>): T;
   has<T>(token: Token<T>): boolean;
 }
 
-/** Resolver handed to async providers. */
+/** Resolver handed to async providers. Both token kinds are actionable here,
+ *  so has() re-widens to AnyToken. */
 export interface AsyncResolver extends SyncResolver {
-  getAsync<T>(token: Token<T>): Promise<T>;
+  getAsync<T>(token: AsyncToken<T>): Promise<T>;
+  has<T>(token: AnyToken<T>): boolean;
 }
 
 export type SyncProvider<T> = (resolver: SyncResolver) => T;
@@ -23,22 +26,19 @@ export type AsyncProvider<T> = (resolver: AsyncResolver) => Promise<T>;
 export type Provider<T> = SyncProvider<T> | AsyncProvider<T>;
 
 /** Immutable once built (frozen by Module). */
-type BaseDefinition<T> = Readonly<{
+export type SyncDefinition<T> = Readonly<{
   token: Token<T>;
   lifetime: Lifetime;
+  async: false;
+  provider: SyncProvider<T>;
 }>;
 
-export type SyncDefinition<T> = BaseDefinition<T> &
-  Readonly<{
-    async: false;
-    provider: SyncProvider<T>;
-  }>;
-
-export type AsyncDefinition<T> = BaseDefinition<T> &
-  Readonly<{
-    async: true;
-    provider: AsyncProvider<T>;
-  }>;
+export type AsyncDefinition<T> = Readonly<{
+  token: AsyncToken<T>;
+  lifetime: Lifetime;
+  async: true;
+  provider: AsyncProvider<T>;
+}>;
 
 export type Definition<T> = SyncDefinition<T> | AsyncDefinition<T>;
 
@@ -62,6 +62,6 @@ export interface ContainerOptions {
 }
 
 export interface ResolutionFrame {
-  token: Token<any>;
+  token: AnyToken<any>;
   lifetime: Lifetime;
 }

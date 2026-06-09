@@ -1,5 +1,5 @@
 import { Container, createModule, createToken } from "../../src";
-import { suite, assert, assertEqual } from "../harness";
+import { assert, assertEqual, suite } from "../harness";
 
 suite("resolution", (test) => {
   test("providers receive a resolver and can pull dependencies", () => {

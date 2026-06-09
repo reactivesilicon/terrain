@@ -1,5 +1,5 @@
 import { DisposedContainerError } from "../errors";
-import type { Token } from "../token";
+import type { AnyToken, AsyncToken, Token } from "../token";
 import type { AsyncDefinition, Disposable, ResolutionFrame } from "../types";
 import { isDisposable } from "../utils";
 import type { ResolutionHost } from "./resolution-host";
@@ -16,22 +16,23 @@ export type InstanceKind = (typeof InstanceKinds)[keyof typeof InstanceKinds];
 // cache, and orphan disposal on a lost commit. Tree/lifecycle/provider concerns
 // are delegated to the ResolutionHost.
 export class ResolutionCache {
-  private singletonInstances = new Map<Token<any>, any>();
-  private scopedInstances = new Map<Token<any>, any>();
-  private singletonResolutionPromises = new Map<Token<any>, Promise<any>>();
-  private scopedResolutionPromises = new Map<Token<any>, Promise<any>>();
-  private factoryResolutionPromises = new Map<Token<any>, Set<Promise<any>>>();
+  private singletonInstances = new Map<AnyToken<any>, any>();
+  private scopedInstances = new Map<AnyToken<any>, any>();
+  private singletonResolutionPromises = new Map<AnyToken<any>, Promise<any>>();
+  private scopedResolutionPromises = new Map<AnyToken<any>, Promise<any>>();
+  private factoryResolutionPromises = new Map<AnyToken<any>, Set<Promise<any>>>();
 
   constructor(private readonly host: ResolutionHost) {}
 
   // ── sync instance access (used by Container's sync resolvers) ──
 
-  getSyncInstance(kind: InstanceKind, token: Token<any>): { has: boolean; value: any } {
+  getSyncInstance<T>(kind: InstanceKind, token: Token<T>): { has: true; value: T } | { has: false } {
     const map = this.instances(kind);
-    return { has: map.has(token), value: map.get(token) };
+    if (!map.has(token)) return { has: false };
+    return { has: true, value: map.get(token) };
   }
 
-  commitSyncInstance(kind: InstanceKind, token: Token<any>, instance: any): void {
+  commitSyncInstance<T>(kind: InstanceKind, token: Token<T>, instance: T): void {
     this.instances(kind).set(token, instance);
     this.host.trackDisposable(instance);
   }
@@ -40,7 +41,7 @@ export class ResolutionCache {
 
   async resolveCachedAsync<T>(
     kind: InstanceKind,
-    token: Token<T>,
+    token: AsyncToken<T>,
     definition: AsyncDefinition<T>,
     chain: ResolutionFrame[],
   ): Promise<T> {
@@ -102,7 +103,7 @@ export class ResolutionCache {
     throw settledResolution.error;
   }
 
-  private removeFactoryPromise(token: Token<any>, promise: Promise<unknown>): void {
+  private removeFactoryPromise(token: AsyncToken<any>, promise: Promise<unknown>): void {
     const pendingTokenResolutionPromises = this.factoryResolutionPromises.get(token);
     if (!pendingTokenResolutionPromises) return;
     pendingTokenResolutionPromises.delete(promise);
@@ -117,7 +118,7 @@ export class ResolutionCache {
     build,
     isStale,
   }: {
-    token: Token<any>;
+    token: AsyncToken<any>;
     build: () => Promise<T>;
     isStale: () => boolean;
   }): Promise<T> {
@@ -145,7 +146,7 @@ export class ResolutionCache {
 
   // ── teardown / introspection (used by Container.evict & dispose) ──
 
-  hasCached(token: Token<any>): boolean {
+  hasCached(token: AnyToken<any>): boolean {
     return (
       this.singletonInstances.has(token) ||
       this.scopedInstances.has(token) ||
@@ -157,7 +158,7 @@ export class ResolutionCache {
 
   // Remove a token's cached instances, returning any disposables to be disposed
   // by the caller (in its own reverse-creation order).
-  evictInstances(token: Token<any>): Disposable[] {
+  evictInstances(token: AnyToken<any>): Disposable[] {
     const out: Disposable[] = [];
     for (const map of [this.singletonInstances, this.scopedInstances]) {
       const instance = map.get(token);
@@ -168,7 +169,7 @@ export class ResolutionCache {
   }
 
   // In-flight promises for a token (all kinds), for the caller to await/orphan.
-  pendingForToken(token: Token<any>): Promise<unknown>[] {
+  pendingForToken(token: AnyToken<any>): Promise<unknown>[] {
     const factory = this.factoryResolutionPromises.get(token);
     return [
       this.singletonResolutionPromises.get(token),
@@ -177,7 +178,7 @@ export class ResolutionCache {
     ].filter((p): p is Promise<unknown> => p !== undefined);
   }
 
-  deletePromisesForToken(token: Token<any>): void {
+  deletePromisesForToken(token: AnyToken<any>): void {
     this.singletonResolutionPromises.delete(token);
     this.scopedResolutionPromises.delete(token);
     this.factoryResolutionPromises.delete(token);
@@ -199,7 +200,7 @@ export class ResolutionCache {
     this.scopedInstances.clear();
   }
 
-  private instances(kind: InstanceKind): Map<Token<any>, any> {
+  private instances(kind: InstanceKind): Map<AnyToken<any>, any> {
     switch (kind) {
       case InstanceKinds.Singleton:
         return this.singletonInstances;
@@ -211,7 +212,7 @@ export class ResolutionCache {
     }
   }
 
-  private resolutionPromises(kind: InstanceKind): Map<Token<any>, Promise<any>> {
+  private resolutionPromises(kind: InstanceKind): Map<AnyToken<any>, Promise<any>> {
     switch (kind) {
       case InstanceKinds.Singleton:
         return this.singletonResolutionPromises;

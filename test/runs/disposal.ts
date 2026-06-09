@@ -1,4 +1,4 @@
-import { Container, createModule, createToken } from "../../src";
+import { Container, createModule, createAsyncToken, createToken } from "../../src";
 import { DisposedContainerError } from "../../src";
 import { suite, assert, assertEqual, assertThrows, isInstance, delay } from "../harness";
 
@@ -55,7 +55,7 @@ suite("disposal", (test) => {
   });
 
   test("concurrent dispose calls do not double-dispose or throw", async () => {
-    const T = createToken<{ dispose(): void }>("concDisp");
+    const T = createAsyncToken<{ dispose(): void }>("concDisp");
     let n = 0;
     const c = new Container();
     c.load(
@@ -94,7 +94,7 @@ suite("disposal", (test) => {
   });
 
   test("onDisposeError observes orphan disposal failure without altering rejection", async () => {
-    const T = createToken<{ dispose(): void }>("orphanHook");
+    const T = createAsyncToken<{ dispose(): void }>("orphanHook");
     let hookError: unknown = null;
     const c = new Container({
       onDisposeError: (e) => {
@@ -126,7 +126,7 @@ suite("disposal", (test) => {
   });
 
   test("a throwing onDisposeError does not change the rejection type", async () => {
-    const T = createToken<{ dispose(): void }>("hookThrows");
+    const T = createAsyncToken<{ dispose(): void }>("hookThrows");
     const c = new Container({
       onDisposeError: () => {
         throw new Error("hook boom");

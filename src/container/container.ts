@@ -14,7 +14,7 @@ import {
   SyncProviderError,
 } from "../errors";
 import type { Module } from "../module";
-import type { Token } from "../token";
+import type { AnyToken, AsyncToken, Token } from "../token";
 import {
   type AsyncDefinition,
   type AsyncResolver,
@@ -42,7 +42,7 @@ export class Container implements ResolutionHost {
   private parent?: Container;
   private readonly options: ContainerOptions;
 
-  private definitions = new Map<Token<any>, Definition<any>>();
+  private definitions = new Map<AnyToken<any>, Definition<any>>();
 
   private readonly resolutionCache = new ResolutionCache(this);
 
@@ -54,7 +54,7 @@ export class Container implements ResolutionHost {
   // Tokens currently being unloaded on THIS container. While present, the
   // token is treated as undefined by findOwner so in-flight providers cannot
   // re-resolve (and re-cache) it mid-unload.
-  private unloading = new Set<Token<any>>();
+  private unloading = new Set<AnyToken<any>>();
 
   // Guards against interleaved lifecycle ops. The flag lives on every node but
   // is only ever set/read on the tree ROOT, so a single lifecycle operation is
@@ -65,7 +65,7 @@ export class Container implements ResolutionHost {
     this.options = options;
   }
 
-  isUnloading(token: Token<any>): boolean {
+  isUnloading(token: AnyToken<any>): boolean {
     return this.unloading.has(token);
   }
 
@@ -188,7 +188,7 @@ export class Container implements ResolutionHost {
     }
   }
 
-  has<T>(token: Token<T>): boolean {
+  has<T>(token: AnyToken<T>): boolean {
     this.assertTreeUsable();
     return this.findOwner(token) !== undefined;
   }
@@ -236,7 +236,7 @@ export class Container implements ResolutionHost {
     return this.resolveSync(token, []);
   }
 
-  getAsync<T>(token: Token<T>): Promise<T> {
+  getAsync<T>(token: AsyncToken<T>): Promise<T> {
     return this.resolveAsync(token, []);
   }
 
@@ -245,7 +245,7 @@ export class Container implements ResolutionHost {
     return () => this.get(token);
   }
 
-  injectAsync<T>(token: Token<T>): () => Promise<T> {
+  injectAsync<T>(token: AsyncToken<T>): () => Promise<T> {
     this.assertTreeUsable();
     return () => this.getAsync(token);
   }
@@ -319,7 +319,7 @@ export class Container implements ResolutionHost {
 
   // ── Async resolution ──────────────────────────────────────────────────
 
-  private async resolveAsync<T>(token: Token<T>, chain: ResolutionFrame[]): Promise<T> {
+  private async resolveAsync<T>(token: AsyncToken<T>, chain: ResolutionFrame[]): Promise<T> {
     this.assertTreeUsable();
 
     const found = this.findOwner(token);
@@ -375,7 +375,7 @@ export class Container implements ResolutionHost {
     }
   }
 
-  wrapProviderError(token: Token<any>, error: unknown): unknown {
+  wrapProviderError(token: AnyToken<any>, error: unknown): unknown {
     if (isFrameworkError(error)) return error;
     return new ProviderExecutionError(tokenName(token), error);
   }
@@ -392,16 +392,16 @@ export class Container implements ResolutionHost {
   private makeAsyncResolver(chain: ResolutionFrame[]): AsyncResolver {
     return {
       get: <T>(token: Token<T>): T => this.resolveSync(token, chain),
-      getAsync: <T>(token: Token<T>): Promise<T> => this.resolveAsync(token, chain),
-      has: <T>(token: Token<T>): boolean => this.has(token),
+      getAsync: <T>(token: AsyncToken<T>): Promise<T> => this.resolveAsync(token, chain),
+      has: <T>(token: AnyToken<T>): boolean => this.has(token),
     };
   }
 
-  private extend(chain: ResolutionFrame[], token: Token<any>, lifetime: Lifetime): ResolutionFrame[] {
+  private extend(chain: ResolutionFrame[], token: AnyToken<any>, lifetime: Lifetime): ResolutionFrame[] {
     return [...chain, { token, lifetime }];
   }
 
-  private findOwner<T>(token: Token<T>): ResolvedDefinition<T> | undefined {
+  private findOwner<T>(token: AnyToken<T>): ResolvedDefinition<T> | undefined {
     // Never resolve through a disposed container (defensive: also covers a
     // child left alive past an ancestor's disposal by some future bug).
     if (this.disposed) return undefined;
@@ -415,7 +415,7 @@ export class Container implements ResolutionHost {
     return this.parent?.findOwner(token);
   }
 
-  private definedInAncestor(token: Token<any>): boolean {
+  private definedInAncestor(token: AnyToken<any>): boolean {
     let ancestor = this.parent;
     while (ancestor) {
       if (ancestor.definitions.has(token)) return true;
@@ -424,7 +424,7 @@ export class Container implements ResolutionHost {
     return false;
   }
 
-  private definedInDescendant(token: Token<any>): boolean {
+  private definedInDescendant(token: AnyToken<any>): boolean {
     for (const child of this.children) {
       if (child.definitions.has(token) || child.definedInDescendant(token)) {
         return true;
@@ -433,23 +433,23 @@ export class Container implements ResolutionHost {
     return false;
   }
 
-  private markUnloadingDeep(token: Token<any>): void {
+  private markUnloadingDeep(token: AnyToken<any>): void {
     this.unloading.add(token);
     for (const child of this.children) child.markUnloadingDeep(token);
   }
 
-  private unmarkUnloadingDeep(token: Token<any>): void {
+  private unmarkUnloadingDeep(token: AnyToken<any>): void {
     this.unloading.delete(token);
     for (const child of this.children) child.unmarkUnloadingDeep(token);
   }
 
-  private checkCircularDependency(token: Token<any>, chain: ResolutionFrame[]): void {
+  private checkCircularDependency(token: AnyToken<any>, chain: ResolutionFrame[]): void {
     if (chain.some((frame) => frame.token === token)) {
       throw new CircularDependencyError([...chain.map((f) => f.token), token].map(tokenName));
     }
   }
 
-  private checkCaptiveDependency(definition: Definition<any>, token: Token<any>, chain: ResolutionFrame[]): void {
+  private checkCaptiveDependency(definition: Definition<any>, token: AnyToken<any>, chain: ResolutionFrame[]): void {
     if (definition.lifetime !== Lifetimes.Scoped) return;
     const singletonAncestor = chain.find((f) => f.lifetime === Lifetimes.Singleton);
     if (singletonAncestor) {
@@ -459,7 +459,7 @@ export class Container implements ResolutionHost {
 
   // ── Eviction (unload) ─────────────────────────────────────────────────
 
-  private hasCachedInstanceDeep(token: Token<any>): boolean {
+  private hasCachedInstanceDeep(token: AnyToken<any>): boolean {
     if (this.resolutionCache.hasCached(token)) return true;
     for (const child of this.children) {
       if (child.hasCachedInstanceDeep(token)) return true;
@@ -469,7 +469,7 @@ export class Container implements ResolutionHost {
 
   // Evict a set of tokens from THIS container, disposing affected instances in
   // reverse creation order (dependents before dependencies), matching dispose().
-  private async evictTokensLocal(tokens: Set<Token<any>>, errors: unknown[]): Promise<void> {
+  private async evictTokensLocal(tokens: Set<AnyToken<any>>, errors: unknown[]): Promise<void> {
     const affected = new Set<Disposable>();
     for (const token of tokens) {
       for (const d of this.resolutionCache.evictInstances(token)) affected.add(d);
@@ -485,8 +485,8 @@ export class Container implements ResolutionHost {
     await this.disposables.disposeReverse({ targets: affected, onError: (e) => errors.push(e) });
   }
 
-  private async evictTokensDeep(tokens: Set<Token<any>>, errors: unknown[]): Promise<void> {
-    for (const child of [...this.children]) {
+  private async evictTokensDeep(tokens: Set<AnyToken<any>>, errors: unknown[]): Promise<void> {
+    for (const child of this.children) {
       await child.evictTokensDeep(tokens, errors);
     }
     await this.evictTokensLocal(tokens, errors);
@@ -513,7 +513,7 @@ export class Container implements ResolutionHost {
 
     const errors: unknown[] = [];
 
-    for (const child of [...this.children]) {
+    for (const child of this.children) {
       try {
         await child.disposeInternal();
       } catch (error) {

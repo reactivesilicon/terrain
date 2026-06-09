@@ -1,10 +1,10 @@
-import { Container, createModule, createToken } from "../../src";
-import { AsyncProviderError } from "../../src";
+import { Container, createModule, createAsyncToken } from "../../src";
+import { AsyncProviderError, type Token } from "../../src";
 import { suite, assert, assertEqual, assertThrows, isInstance, delay } from "../harness";
 
 suite("async", (test) => {
   test("async singleton resolves once under concurrency", async () => {
-    const T = createToken<{ n: number }>("aSingle");
+    const T = createAsyncToken<{ n: number }>("aSingle");
     let builds = 0;
     const c = new Container();
     c.load(
@@ -22,7 +22,7 @@ suite("async", (test) => {
   });
 
   test("async scoped resolves once per scope under concurrency", async () => {
-    const T = createToken<object>("aScoped");
+    const T = createAsyncToken<object>("aScoped");
     let builds = 0;
     const root = new Container();
     root.load(
@@ -40,7 +40,7 @@ suite("async", (test) => {
   });
 
   test("async factory produces a fresh instance every call", async () => {
-    const T = createToken<number>("aFactory");
+    const T = createAsyncToken<number>("aFactory");
     let n = 0;
     const c = new Container();
     c.load(createModule((m) => m.factoryAsync(T, async () => (n += 1))));
@@ -50,7 +50,7 @@ suite("async", (test) => {
   });
 
   test("sync get() of an async provider throws before any side effect", async () => {
-    const T = createToken<number>("aMisuse");
+    const T = createAsyncToken<number>("aMisuse");
     let started = false;
     const c = new Container();
     c.load(
@@ -61,12 +61,14 @@ suite("async", (test) => {
         }),
       ),
     );
-    await assertThrows(() => c.get(T), isInstance(AsyncProviderError));
+    // The token brand makes this a compile error now; cast to exercise the
+    // runtime backstop that still protects untyped/JS callers.
+    await assertThrows(() => c.get(T as unknown as Token<number>), isInstance(AsyncProviderError));
     assertEqual(started, false, "provider must not start when sync get() is misused");
   });
 
   test("async provider rejection does not poison the singleton cache", async () => {
-    const T = createToken<string>("aPoison");
+    const T = createAsyncToken<string>("aPoison");
     let attempt = 0;
     const c = new Container();
     c.load(

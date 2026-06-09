@@ -1,10 +1,10 @@
-import { Container, createModule, createToken } from "../../src";
+import { Container, createModule, createAsyncToken, createToken } from "../../src";
 import { DisposedContainerError } from "../../src";
 import { suite, assert, assertEqual, assertThrows, isInstance, ignore, delay } from "../harness";
 
 suite("concurrency", (test) => {
   test("in-flight async singleton rejects and is disposed after dispose()", async () => {
-    const T = createToken<{ dispose(): void }>("ifSingle");
+    const T = createAsyncToken<{ dispose(): void }>("ifSingle");
     let disposed = false;
     const c = new Container();
     c.load(
@@ -23,7 +23,7 @@ suite("concurrency", (test) => {
   });
 
   test("in-flight async factory is orphaned on unload", async () => {
-    const T = createToken<{ dispose(): void }>("ifFactory");
+    const T = createAsyncToken<{ dispose(): void }>("ifFactory");
     let disposed = false;
     const mod = createModule((m) =>
       m.factoryAsync(T, async () => {
@@ -74,7 +74,7 @@ suite("concurrency", (test) => {
   });
 
   test("pending child async settling after parent dispose is orphaned", async () => {
-    const T = createToken<{ dispose(): void }>("pendChild");
+    const T = createAsyncToken<{ dispose(): void }>("pendChild");
     let disposed = false;
     const root = new Container();
     const child = root.createScope();
@@ -102,7 +102,7 @@ suite("concurrency", (test) => {
     for (let i = 0; i < trials; i++) {
       const root = new Container();
       const child = root.createScope();
-      const T = createToken<{ dispose(): void }>(`race${i}`);
+      const T = createAsyncToken<{ dispose(): void }>(`race${i}`);
       let n = 0;
       const mod = createModule((m) =>
         m.scopedAsync(T, async () => {
@@ -122,7 +122,7 @@ suite("concurrency", (test) => {
       if (n > 1) doubles += 1;
       if (n >= 1) built += 1;
       try {
-        child.get(T);
+        await child.getAsync(T);
         orphansAlive += 1;
       } catch {
         /* expected: disposed */

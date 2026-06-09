@@ -1,5 +1,5 @@
 import { DuplicateDefinitionError } from "./errors";
-import type { Token } from "./token";
+import type { AnyToken, AsyncToken, Token } from "./token";
 import {
   type AsyncDefinition,
   type AsyncProvider,
@@ -23,33 +23,33 @@ declare const MODULE_BRAND: unique symbol;
  *  construction path that bypasses builder validation. */
 export interface Module {
   readonly [MODULE_BRAND]: true;
-  entries(): IterableIterator<[Token<any>, Definition<any>]>;
-  keys(): IterableIterator<Token<any>>;
+  entries(): IterableIterator<[AnyToken<any>, Definition<any>]>;
+  keys(): IterableIterator<AnyToken<any>>;
 }
 
 class BuiltModule implements Module {
   // Brand is phantom: declared on the type, asserted here, never read at runtime.
   declare readonly [MODULE_BRAND]: true;
 
-  private readonly _definitions: ReadonlyMap<Token<any>, Definition<any>>;
+  private readonly _definitions: ReadonlyMap<AnyToken<any>, Definition<any>>;
 
-  constructor(definitions: ReadonlyMap<Token<any>, Definition<any>>) {
+  constructor(definitions: ReadonlyMap<AnyToken<any>, Definition<any>>) {
     this._definitions = new Map(
       [...definitions].map(([token, definition]) => [token, Object.freeze({ ...definition })]),
     );
   }
 
-  entries(): IterableIterator<[Token<any>, Definition<any>]> {
+  entries(): IterableIterator<[AnyToken<any>, Definition<any>]> {
     return this._definitions.entries();
   }
 
-  keys(): IterableIterator<Token<any>> {
+  keys(): IterableIterator<AnyToken<any>> {
     return this._definitions.keys();
   }
 }
 
 export class ModuleBuilder {
-  private readonly definitions = new Map<Token<any>, Definition<any>>();
+  private readonly definitions = new Map<AnyToken<any>, Definition<any>>();
 
   private add<T>(token: Token<T>, lifetime: Lifetime, provider: SyncProvider<T>): void {
     if (this.definitions.has(token)) {
@@ -59,7 +59,7 @@ export class ModuleBuilder {
     this.definitions.set(token, definition);
   }
 
-  private addAsync<T>(token: Token<T>, lifetime: Lifetime, provider: AsyncProvider<T>): void {
+  private addAsync<T>(token: AsyncToken<T>, lifetime: Lifetime, provider: AsyncProvider<T>): void {
     if (this.definitions.has(token)) {
       throw new DuplicateDefinitionError(tokenName(token));
     }
@@ -70,19 +70,19 @@ export class ModuleBuilder {
   single<T>(token: Token<T>, provider: SyncProvider<T>): void {
     this.add(token, Lifetimes.Singleton, provider);
   }
-  singleAsync<T>(token: Token<T>, provider: AsyncProvider<T>): void {
+  singleAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>): void {
     this.addAsync(token, Lifetimes.Singleton, provider);
   }
   factory<T>(token: Token<T>, provider: SyncProvider<T>): void {
     this.add(token, Lifetimes.Factory, provider);
   }
-  factoryAsync<T>(token: Token<T>, provider: AsyncProvider<T>): void {
+  factoryAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>): void {
     this.addAsync(token, Lifetimes.Factory, provider);
   }
   scoped<T>(token: Token<T>, provider: SyncProvider<T>): void {
     this.add(token, Lifetimes.Scoped, provider);
   }
-  scopedAsync<T>(token: Token<T>, provider: AsyncProvider<T>): void {
+  scopedAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>): void {
     this.addAsync(token, Lifetimes.Scoped, provider);
   }
 
