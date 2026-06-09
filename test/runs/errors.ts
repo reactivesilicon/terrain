@@ -1,4 +1,4 @@
-import { Container, createAsyncToken, createModule, createToken } from "../../src";
+import { Container, createAsyncToken, createModule, createToken, isAsyncToken } from "../../src";
 import {
   type AsyncResolver,
   type AsyncToken,
@@ -182,6 +182,8 @@ suite("errors: guardrails", (test) => {
       c.inject(A);
       // @ts-expect-error injectAsync() rejects sync tokens
       c.injectAsync(S);
+      // @ts-expect-error a structural look-alike cannot impersonate a token (brand is unexported)
+      c.get({ description: "forged", mode: "sync" });
       createModule((m) => {
         // @ts-expect-error sync builder methods reject async tokens
         m.single(A, () => 1);
@@ -201,6 +203,10 @@ suite("errors: guardrails", (test) => {
     const c = new Container();
     assertEqual(c.has(S), false);
     assertEqual(c.has(A), false);
+    // The mode discriminant is real at runtime, not just a type-level brand.
+    assertEqual(isAsyncToken(S), false);
+    assertEqual(isAsyncToken(A), true);
+    assertEqual(S.description, "brandSync");
   });
 
   test("all framework errors extend DIError", () => {

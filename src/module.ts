@@ -9,10 +9,7 @@ import {
   type SyncDefinition,
   type SyncProvider,
 } from "./types";
-
-function tokenName(token: symbol): string {
-  return token.description || "UnknownToken";
-}
+import { tokenName } from "./utils";
 
 // Non-exported brand: prevents a plain object literal from satisfying Module
 // structurally. Modules can only come from createModule()/ModuleBuilder.

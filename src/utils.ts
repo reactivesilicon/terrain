@@ -1,6 +1,7 @@
+import type { AnyToken } from "./token";
 import type { Disposable } from "./types";
 
-export function tokenName(token: symbol): string {
+export function tokenName(token: AnyToken<any>): string {
   return token.description || "UnknownToken";
 }
 
