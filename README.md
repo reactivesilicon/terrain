@@ -283,6 +283,37 @@ const database = await getDatabase();
 
 The lazy getter does not cache independently. It always resolves through the container, so factory semantics are preserved.
 
+## Accessors
+
+Use `createAccessors` to give consumers named accessors instead of tokens. Tokens stay a wiring detail; call sites read like an API.
+
+```ts
+import { createAccessors } from "terrain";
+
+const app = createAccessors(container, {
+  logger: LoggerToken, // sync token  -> app.logger(): Logger
+  db: DatabaseToken, // async token -> app.db(): Promise<Database>
+});
+
+app.logger().info("hello");
+const db = await app.db();
+```
+
+The return type of each accessor is derived from the token kind: sync tokens produce `() => T`, async tokens produce `() => Promise<T>`.
+
+Accessors are lazy `inject`-style getters: each call resolves through the container, honoring the definition's lifetime (a `factory` member returns a fresh value per call). They can be created before their modules are loaded, and every accessor throws once the container is disposed.
+
+For per-request work, build the accessors over a scope:
+
+```ts
+await root.withScope(async (scope) => {
+  const req = createAccessors(scope, { handler: HandlerToken });
+  return req.handler().handle(userId);
+});
+```
+
+Accessors are best kept at the edges — composition roots, route handlers, CLI entry points. Business logic should still receive its dependencies as parameters rather than reaching into an accessor object, so its dependencies stay visible in its signature.
+
 ## Disposal
 
 If an instance has a `dispose()` method, the container tracks it.

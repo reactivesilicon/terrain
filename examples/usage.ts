@@ -10,6 +10,7 @@
 import {
   Container,
   createAsyncToken,
+  createAccessors,
   createModule,
   createSyncToken,
   CaptiveDependencyError,
@@ -251,6 +252,47 @@ function lazyInjection() {
   const getHeavy = app.inject(HeavyToken);
   console.log("not built until called:", built === 0);
   console.log("lazy value:", getHeavy().value, "| built once:", built === 1);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// 6b. Accessors — token-free call sites
+// ───────────────────────────────────────────────────────────────────────────
+//
+// createAccessors(container, spec) turns a name -> token mapping into typed,
+// lazy accessors: sync tokens become () => T, async tokens () => Promise<T>.
+// Tokens stay a wiring detail; consumers call app.logger() / await app.db().
+
+async function accessors() {
+  line("6b. accessors");
+
+  interface Logger {
+    log(msg: string): void;
+  }
+  interface Db {
+    ping(): string;
+  }
+
+  const LoggerToken = createSyncToken<Logger>("Logger");
+  const DbToken = createAsyncToken<Db>("Db");
+
+  const container = new Container();
+  container.load(
+    createModule((module) => {
+      module.single(LoggerToken, () => ({ log: (msg) => console.log(`  [app] ${msg}`) }));
+      module.singleAsync(DbToken, async () => {
+        await new Promise((res) => setTimeout(res, 10)); // simulate connect()
+        return { ping: () => "pong" };
+      });
+    }),
+  );
+
+  const app = createAccessors(container, { logger: LoggerToken, db: DbToken });
+
+  app.logger().log("no tokens at this call site");
+  const db = await app.db(); // async member -> promise
+  console.log("accessors ping:", db.ping());
+
+  await container.dispose();
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -497,6 +539,7 @@ async function main() {
   await scopes();
   await disposal();
   lazyInjection();
+  await accessors();
   modules();
   testingOverride();
   await hotSwap();
