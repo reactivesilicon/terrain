@@ -69,8 +69,8 @@ export class Container implements ResolutionHost {
     return this.unloading.has(token);
   }
 
-  trackDisposable<T>(instance: T, dispose: Disposer<T>): void {
-    this.disposables.track(instance, dispose);
+  trackDisposable<T>(token: AnyToken<T>, instance: T, dispose: Disposer<T>): void {
+    this.disposables.track(token, instance, dispose);
   }
 
   invokeProviderSync<T>(definition: SyncDefinition<T>, chain: ResolutionFrame[]): T {
@@ -467,12 +467,13 @@ export class Container implements ResolutionHost {
     return false;
   }
 
-  // Evict a set of tokens from THIS container, disposing affected instances in
+  // Evict a set of tokens from THIS container, disposing their instances in
   // reverse creation order (dependents before dependencies), matching dispose().
+  // Disposal records are token-keyed, so only the evicted tokens' own
+  // disposers run — never another token's, even on a shared instance.
   private async evictTokensLocal(tokens: Set<AnyToken<any>>, errors: unknown[]): Promise<void> {
-    const affected = new Set<unknown>();
     for (const token of tokens) {
-      for (const d of this.resolutionCache.evictInstances(token)) affected.add(d);
+      this.resolutionCache.evictInstances(token);
       for (const p of this.resolutionCache.pendingForToken(token)) {
         try {
           await p;
@@ -482,7 +483,7 @@ export class Container implements ResolutionHost {
       }
       this.resolutionCache.deletePromisesForToken(token);
     }
-    await this.disposables.disposeReverse({ targets: affected, onError: (e) => errors.push(e) });
+    await this.disposables.disposeReverse({ targets: tokens, onError: (e) => errors.push(e) });
   }
 
   private async evictTokensDeep(tokens: Set<AnyToken<any>>, errors: unknown[]): Promise<void> {

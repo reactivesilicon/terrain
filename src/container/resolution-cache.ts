@@ -33,7 +33,7 @@ export class ResolutionCache {
 
   commitSyncInstance<T>(kind: InstanceKind, token: Token<T>, instance: T, dispose?: Disposer<T>): void {
     this.instances(kind).set(token, instance);
-    if (dispose) this.host.trackDisposable(instance, dispose);
+    if (dispose) this.host.trackDisposable(token, instance, dispose);
   }
 
   // ── async cached resolution (singleton/scoped) ──
@@ -68,7 +68,7 @@ export class ResolutionCache {
     if (settledResolution.ok) {
       instances.set(token, settledResolution.value);
       if (definition.dispose) {
-        this.host.trackDisposable(settledResolution.value, definition.dispose);
+        this.host.trackDisposable(token, settledResolution.value, definition.dispose);
       }
       resolutionPromises.delete(token);
       return settledResolution.value;
@@ -161,16 +161,11 @@ export class ResolutionCache {
     );
   }
 
-  // Remove a token's cached instances, returning them so the caller can dispose
-  // the tracked ones (in its own reverse-creation order).
-  evictInstances(token: AnyToken<any>): unknown[] {
-    const out: unknown[] = [];
-    for (const map of [this.singletonInstances, this.scopedInstances]) {
-      if (!map.has(token)) continue;
-      out.push(map.get(token));
-      map.delete(token);
-    }
-    return out;
+  // Remove a token's cached instances. Disposal of the tracked ones is the
+  // caller's job, via the token-keyed DisposableRegistry.
+  evictInstances(token: AnyToken<any>): void {
+    this.singletonInstances.delete(token);
+    this.scopedInstances.delete(token);
   }
 
   // In-flight promises for a token (all kinds), for the caller to await/orphan.

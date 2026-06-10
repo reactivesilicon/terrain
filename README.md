@@ -340,6 +340,8 @@ This helps dependents dispose before their dependencies.
 
 Definitions without `{ dispose }` are simply dropped at teardown. Factory instances are caller-owned: their disposer is only used when an in-flight async factory result is orphaned by a concurrent teardown.
 
+Disposal records are keyed by token. If two tokens share one instance (an alias definition returning `resolver.get(Owner)`), each token's disposer runs only when that token is torn down — unloading the alias never destroys the owner's resource. Register resource-destroying cleanup only on the definition that created the resource; an alias's disposer should release just what the alias itself added.
+
 If multiple disposals fail, the container throws an `AggregateError`.
 
 ## Lifecycle semantics

@@ -338,6 +338,35 @@ suite("disposal", (test) => {
     assertEqual(ended, 1, "registered disposer must run, regardless of method name");
   });
 
+  test("unloading an alias never runs the owner's disposer (token-keyed disposal)", async () => {
+    const Owner = createSyncToken<{ end(): void }>("aliasOwner");
+    const Alias = createSyncToken<{ end(): void }>("aliasView");
+    let ownerEnded = 0;
+    let aliasCleanup = 0;
+    const ownerMod = createModule((m) =>
+      m.single(Owner, () => ({ end: () => (ownerEnded += 1) }), { dispose: (x) => x.end() }),
+    );
+    const aliasMod = createModule((m) =>
+      // Alias: provider returns the owner's instance. Its disposer must run on
+      // its own teardown without destroying the shared resource.
+      m.single(Alias, (r) => r.get(Owner), {
+        dispose: () => {
+          aliasCleanup += 1;
+        },
+      }),
+    );
+    const c = new Container();
+    c.load(ownerMod);
+    c.load(aliasMod);
+    assert(c.get(Alias) === c.get(Owner), "alias and owner share one instance");
+    await c.unload(aliasMod);
+    assertEqual(aliasCleanup, 1, "the alias's own disposer runs on its unload");
+    assertEqual(ownerEnded, 0, "the owner's disposer must not run when only the alias is unloaded");
+    assertEqual(c.get(Owner).end !== undefined, true, "owner stays resolvable");
+    await c.dispose();
+    assertEqual(ownerEnded, 1, "owner's disposer runs once at container dispose");
+  });
+
   test("unload disposes evicted instances in reverse creation order", async () => {
     const A = createSyncToken<{ dispose(): void }>("ulA");
     const B = createSyncToken<{ dispose(): void }>("ulB");
