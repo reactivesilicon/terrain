@@ -195,28 +195,33 @@ async function scopes() {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// 5. Disposal & lifecycle (Disposable)
+// 5. Disposal & lifecycle
 // ───────────────────────────────────────────────────────────────────────────
 //
-// Any singleton/scoped instance with a dispose() method is tracked and disposed
-// in REVERSE creation order when its container is disposed. Factories are
-// caller-owned and never auto-disposed.
+// Teardown is registered per definition via { dispose }. The container only
+// disposes what you registered — there is no dispose() duck-typing — and runs
+// disposers in REVERSE creation order when the container is disposed.
+// Factories are caller-owned and never auto-disposed.
 
 async function disposal() {
   line("5. disposal (reverse creation order)");
 
-  const PoolToken = createSyncToken<{ dispose(): void }>("Pool");
-  const ServiceToken = createSyncToken<{ dispose(): void }>("Service");
+  const PoolToken = createSyncToken<{ close(): void }>("Pool");
+  const ServiceToken = createSyncToken<{ close(): void }>("Service");
 
   const order: string[] = [];
   const app = new Container();
   app.load(
     createModule((module) => {
-      module.single(PoolToken, () => ({ dispose: () => order.push("pool") }));
-      module.single(ServiceToken, (resolver) => {
-        resolver.get(PoolToken); // Service depends on Pool -> Pool created first
-        return { dispose: () => order.push("service") };
-      });
+      module.single(PoolToken, () => ({ close: () => order.push("pool") }), { dispose: (pool) => pool.close() });
+      module.single(
+        ServiceToken,
+        (resolver) => {
+          resolver.get(PoolToken); // Service depends on Pool -> Pool created first
+          return { close: () => order.push("service") };
+        },
+        { dispose: (svc) => svc.close() },
+      );
     }),
   );
 

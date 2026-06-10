@@ -20,7 +20,9 @@ suite("scopes", (test) => {
     const T = createSyncToken<{ dispose(): void }>("ws");
     let disposed = 0;
     const root = new Container();
-    root.load(createModule((m) => m.scoped(T, () => ({ dispose: () => (disposed += 1) }))));
+    root.load(
+      createModule((m) => m.scoped(T, () => ({ dispose: () => (disposed += 1) }), { dispose: (x) => x.dispose() })),
+    );
     await root.withScope(async (scope) => {
       scope.get(T);
     });
@@ -44,11 +46,15 @@ suite("scopes", (test) => {
     const root = new Container();
     root.load(
       createModule((m) =>
-        m.scoped(T, () => ({
-          dispose: () => {
-            throw new Error("dispose-failed");
-          },
-        })),
+        m.scoped(
+          T,
+          () => ({
+            dispose: () => {
+              throw new Error("dispose-failed");
+            },
+          }),
+          { dispose: (x) => x.dispose() },
+        ),
       ),
     );
     const bodyErr = new Error("body-failed");

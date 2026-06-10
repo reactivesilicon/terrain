@@ -316,18 +316,18 @@ Accessors are best kept at the edges — composition roots, route handlers, CLI 
 
 ## Disposal
 
-If an instance has a `dispose()` method, the container tracks it.
+Teardown is registered per definition with the `{ dispose }` option. The container disposes exactly what you registered, how you registered it — an instance that merely happens to have a `dispose()` method is never touched.
 
 ```ts
-class Database {
-  async dispose(): Promise<void> {
-    await this.close();
-  }
+module.single(DbToken, () => new Pool(config), {
+  dispose: (pool) => pool.end(),
+});
+```
 
-  private async close(): Promise<void> {
-    // close connection
-  }
-}
+This works with any teardown method name (`close`, `destroy`, `end`, `disconnect`, …), and the disposer is typed to the token's value. A disposer may be async even for a sync token — disposal always runs in an async context:
+
+```ts
+type Disposer<T> = (instance: T) => void | Promise<void>;
 ```
 
 Disposal runs in reverse creation order.
@@ -338,13 +338,7 @@ await container.dispose();
 
 This helps dependents dispose before their dependencies.
 
-Disposal can be synchronous or asynchronous:
-
-```ts
-interface Disposable {
-  dispose(): void | Promise<void>;
-}
-```
+Definitions without `{ dispose }` are simply dropped at teardown. Factory instances are caller-owned: their disposer is only used when an in-flight async factory result is orphaned by a concurrent teardown.
 
 If multiple disposals fail, the container throws an `AggregateError`.
 

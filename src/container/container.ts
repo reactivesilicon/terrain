@@ -20,7 +20,7 @@ import {
   type AsyncResolver,
   type ContainerOptions,
   type Definition,
-  type Disposable,
+  type Disposer,
   type Lifetime,
   Lifetimes,
   type LoadOptions,
@@ -28,7 +28,7 @@ import {
   type SyncDefinition,
   type SyncResolver,
 } from "../types";
-import { flattenErrors, isDisposable, tokenName } from "../utils";
+import { flattenErrors, tokenName } from "../utils";
 import { DisposableRegistry } from "./disposable-registry";
 import { InstanceKinds, ResolutionCache } from "./resolution-cache";
 import type { ResolutionHost } from "./resolution-host";
@@ -69,8 +69,8 @@ export class Container implements ResolutionHost {
     return this.unloading.has(token);
   }
 
-  trackDisposable(instance: unknown): void {
-    this.disposables.track(instance);
+  trackDisposable<T>(instance: T, dispose: Disposer<T>): void {
+    this.disposables.track(instance, dispose);
   }
 
   invokeProviderSync<T>(definition: SyncDefinition<T>, chain: ResolutionFrame[]): T {
@@ -285,8 +285,8 @@ export class Container implements ResolutionHost {
     const cached = this.resolutionCache.getSyncInstance(InstanceKinds.Singleton, token);
     if (cached.has) return cached.value;
     const instance = this.invokeProvider(definition, chain);
-    this.guardAfterConstruction(token, instance);
-    this.resolutionCache.commitSyncInstance(InstanceKinds.Singleton, token, instance);
+    this.guardAfterConstruction(token, instance, definition.dispose);
+    this.resolutionCache.commitSyncInstance(InstanceKinds.Singleton, token, instance, definition.dispose);
     return instance;
   }
 
@@ -294,18 +294,18 @@ export class Container implements ResolutionHost {
     const cached = this.resolutionCache.getSyncInstance(InstanceKinds.Scoped, token);
     if (cached.has) return cached.value;
     const instance = this.invokeProvider(definition, chain);
-    this.guardAfterConstruction(token, instance);
-    this.resolutionCache.commitSyncInstance(InstanceKinds.Scoped, token, instance);
+    this.guardAfterConstruction(token, instance, definition.dispose);
+    this.resolutionCache.commitSyncInstance(InstanceKinds.Scoped, token, instance, definition.dispose);
     return instance;
   }
 
   // If the provider tore down this container (dispose, or unload of this token)
   // during its own synchronous construction, refuse to return/cache the result:
-  // dispose the orphan and throw.
-  private guardAfterConstruction(token: Token<any>, instance: unknown): void {
+  // dispose the orphan (via its registered disposer, if any) and throw.
+  private guardAfterConstruction<T>(token: Token<any>, instance: T, dispose?: Disposer<T>): void {
     if (this.isTreeDisposed() || this.unloading.has(token)) {
-      if (isDisposable(instance)) {
-        void Promise.resolve(instance.dispose()).catch((e) => this.notifyDisposeError(e));
+      if (dispose) {
+        void Promise.resolve(dispose(instance)).catch((e) => this.notifyDisposeError(e));
       }
       throw new DisposedContainerError();
     }
@@ -313,7 +313,7 @@ export class Container implements ResolutionHost {
 
   private resolveFactorySync<T>(definition: SyncDefinition<T>, chain: ResolutionFrame[]): T {
     const instance = this.invokeProvider(definition, chain);
-    this.guardAfterConstruction(definition.token, instance);
+    this.guardAfterConstruction(definition.token, instance, definition.dispose);
     return instance;
   }
 
@@ -470,7 +470,7 @@ export class Container implements ResolutionHost {
   // Evict a set of tokens from THIS container, disposing affected instances in
   // reverse creation order (dependents before dependencies), matching dispose().
   private async evictTokensLocal(tokens: Set<AnyToken<any>>, errors: unknown[]): Promise<void> {
-    const affected = new Set<Disposable>();
+    const affected = new Set<unknown>();
     for (const token of tokens) {
       for (const d of this.resolutionCache.evictInstances(token)) affected.add(d);
       for (const p of this.resolutionCache.pendingForToken(token)) {

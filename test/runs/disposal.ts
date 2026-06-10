@@ -10,11 +10,15 @@ suite("disposal", (test) => {
     const c = new Container();
     c.load(
       createModule((m) => {
-        m.single(Db, () => ({ dispose: () => order.push("db") }));
-        m.single(Repo, (r) => {
-          r.get(Db);
-          return { dispose: () => order.push("repo") };
-        });
+        m.single(Db, () => ({ dispose: () => order.push("db") }), { dispose: (x) => x.dispose() });
+        m.single(
+          Repo,
+          (r) => {
+            r.get(Db);
+            return { dispose: () => order.push("repo") };
+          },
+          { dispose: (x) => x.dispose() },
+        );
       }),
     );
     c.get(Repo);
@@ -26,7 +30,7 @@ suite("disposal", (test) => {
     const T = createSyncToken<{ dispose(): void }>("singleDisp");
     let n = 0;
     const c = new Container();
-    c.load(createModule((m) => m.single(T, () => ({ dispose: () => (n += 1) }))));
+    c.load(createModule((m) => m.single(T, () => ({ dispose: () => (n += 1) }), { dispose: (x) => x.dispose() })));
     c.get(T);
     await c.dispose();
     assertEqual(n, 1);
@@ -36,7 +40,7 @@ suite("disposal", (test) => {
     const T = createSyncToken<{ dispose(): void }>("factoryDisp");
     let n = 0;
     const c = new Container();
-    c.load(createModule((m) => m.factory(T, () => ({ dispose: () => (n += 1) }))));
+    c.load(createModule((m) => m.factory(T, () => ({ dispose: () => (n += 1) }), { dispose: (x) => x.dispose() })));
     for (let i = 0; i < 500; i++) c.get(T);
     await c.dispose();
     assertEqual(n, 0, "factories are caller-owned");
@@ -46,7 +50,7 @@ suite("disposal", (test) => {
     const T = createSyncToken<{ dispose(): void }>("idem");
     let n = 0;
     const c = new Container();
-    c.load(createModule((m) => m.single(T, () => ({ dispose: () => (n += 1) }))));
+    c.load(createModule((m) => m.single(T, () => ({ dispose: () => (n += 1) }), { dispose: (x) => x.dispose() })));
     c.get(T);
     await c.dispose();
     await c.dispose();
@@ -60,10 +64,14 @@ suite("disposal", (test) => {
     const c = new Container();
     c.load(
       createModule((m) =>
-        m.singleAsync(T, async () => {
-          await delay(10);
-          return { dispose: () => (n += 1) };
-        }),
+        m.singleAsync(
+          T,
+          async () => {
+            await delay(10);
+            return { dispose: () => (n += 1) };
+          },
+          { dispose: (x) => x.dispose() },
+        ),
       ),
     );
     await c.getAsync(T);
@@ -76,7 +84,7 @@ suite("disposal", (test) => {
     const T = createSyncToken<{ dispose(): void }>("cascade");
     let n = 0;
     const root = new Container();
-    root.load(createModule((m) => m.scoped(T, () => ({ dispose: () => (n += 1) }))));
+    root.load(createModule((m) => m.scoped(T, () => ({ dispose: () => (n += 1) }), { dispose: (x) => x.dispose() })));
     const scope = root.createScope();
     scope.get(T);
     await root.dispose();
@@ -103,14 +111,18 @@ suite("disposal", (test) => {
     });
     c.load(
       createModule((m) =>
-        m.singleAsync(T, async () => {
-          await delay(30);
-          return {
-            dispose: () => {
-              throw new Error("orphan-dispose");
-            },
-          };
-        }),
+        m.singleAsync(
+          T,
+          async () => {
+            await delay(30);
+            return {
+              dispose: () => {
+                throw new Error("orphan-dispose");
+              },
+            };
+          },
+          { dispose: (x) => x.dispose() },
+        ),
       ),
     );
     const p = c.getAsync(T);
@@ -134,14 +146,18 @@ suite("disposal", (test) => {
     });
     c.load(
       createModule((m) =>
-        m.singleAsync(T, async () => {
-          await delay(30);
-          return {
-            dispose: () => {
-              throw new Error("disp");
-            },
-          };
-        }),
+        m.singleAsync(
+          T,
+          async () => {
+            await delay(30);
+            return {
+              dispose: () => {
+                throw new Error("disp");
+              },
+            };
+          },
+          { dispose: (x) => x.dispose() },
+        ),
       ),
     );
     const p = c.getAsync(T);
@@ -160,11 +176,15 @@ suite("disposal", (test) => {
     const c = new Container();
     c.load(
       createModule((m) =>
-        m.single(T, () => ({
-          dispose: () => {
-            throw new Error("boom");
-          },
-        })),
+        m.single(
+          T,
+          () => ({
+            dispose: () => {
+              throw new Error("boom");
+            },
+          }),
+          { dispose: (x) => x.dispose() },
+        ),
       ),
     );
     c.get(T);
@@ -189,15 +209,23 @@ suite("disposal", (test) => {
     const c = new Container();
     c.load(
       createModule((m) => {
-        m.single(A, () => ({ dispose: () => order.push("a") }));
-        m.single(B, (r) => {
-          r.get(A);
-          return { dispose: () => order.push("b") };
-        });
-        m.single(D, (r) => {
-          r.get(B);
-          return { dispose: () => order.push("c") };
-        });
+        m.single(A, () => ({ dispose: () => order.push("a") }), { dispose: (x) => x.dispose() });
+        m.single(
+          B,
+          (r) => {
+            r.get(A);
+            return { dispose: () => order.push("b") };
+          },
+          { dispose: (x) => x.dispose() },
+        );
+        m.single(
+          D,
+          (r) => {
+            r.get(B);
+            return { dispose: () => order.push("c") };
+          },
+          { dispose: (x) => x.dispose() },
+        );
       }),
     );
     c.get(D); // creation order a, b, c
@@ -213,19 +241,27 @@ suite("disposal", (test) => {
     const c = new Container();
     c.load(
       createModule((m) => {
-        m.single(A, () => ({ dispose: () => disposed.push("a") }));
-        m.single(B, (r) => {
-          r.get(A);
-          return {
-            dispose: () => {
-              throw new Error("middle");
-            },
-          };
-        });
-        m.single(D, (r) => {
-          r.get(B);
-          return { dispose: () => disposed.push("c") };
-        });
+        m.single(A, () => ({ dispose: () => disposed.push("a") }), { dispose: (x) => x.dispose() });
+        m.single(
+          B,
+          (r) => {
+            r.get(A);
+            return {
+              dispose: () => {
+                throw new Error("middle");
+              },
+            };
+          },
+          { dispose: (x) => x.dispose() },
+        );
+        m.single(
+          D,
+          (r) => {
+            r.get(B);
+            return { dispose: () => disposed.push("c") };
+          },
+          { dispose: (x) => x.dispose() },
+        );
       }),
     );
     c.get(D);
@@ -249,11 +285,15 @@ suite("disposal", (test) => {
     const root = new Container();
     root.load(
       createModule((m) => {
-        m.single(Single, () => ({ dispose: () => order.push("single") }));
-        m.scoped(Scoped, (r) => {
-          r.get(Single); // single created first
-          return { dispose: () => order.push("scoped") };
-        });
+        m.single(Single, () => ({ dispose: () => order.push("single") }), { dispose: (x) => x.dispose() });
+        m.scoped(
+          Scoped,
+          (r) => {
+            r.get(Single); // single created first
+            return { dispose: () => order.push("scoped") };
+          },
+          { dispose: (x) => x.dispose() },
+        );
       }),
     );
     const scope = root.createScope();
@@ -265,16 +305,53 @@ suite("disposal", (test) => {
     assertEqual(order.join(","), "scoped,single");
   });
 
+  test("an instance with a dispose() method but no registered disposer is left alone", async () => {
+    const T = createSyncToken<{ dispose(): void }>("noDuckTyping");
+    let n = 0;
+    const c = new Container();
+    // No { dispose } option: the container must not call the method on its own.
+    c.load(createModule((m) => m.single(T, () => ({ dispose: () => (n += 1) }))));
+    c.get(T);
+    await c.dispose();
+    assertEqual(n, 0, "dispose() duck-typing must not exist");
+  });
+
+  test("disposer works for teardown methods not named dispose()", async () => {
+    const T = createSyncToken<{ end(): Promise<void> }>("closeNamed");
+    let ended = 0;
+    const c = new Container();
+    c.load(
+      createModule((m) =>
+        m.single(
+          T,
+          () => ({
+            end: async () => {
+              ended += 1;
+            },
+          }),
+          { dispose: (pool) => pool.end() },
+        ),
+      ),
+    );
+    c.get(T);
+    await c.dispose();
+    assertEqual(ended, 1, "registered disposer must run, regardless of method name");
+  });
+
   test("unload disposes evicted instances in reverse creation order", async () => {
     const A = createSyncToken<{ dispose(): void }>("ulA");
     const B = createSyncToken<{ dispose(): void }>("ulB");
     const order: string[] = [];
     const mod = createModule((m) => {
-      m.single(A, () => ({ dispose: () => order.push("a") }));
-      m.single(B, (r) => {
-        r.get(A);
-        return { dispose: () => order.push("b") };
-      });
+      m.single(A, () => ({ dispose: () => order.push("a") }), { dispose: (x) => x.dispose() });
+      m.single(
+        B,
+        (r) => {
+          r.get(A);
+          return { dispose: () => order.push("b") };
+        },
+        { dispose: (x) => x.dispose() },
+      );
     });
     const c = new Container();
     c.load(mod);

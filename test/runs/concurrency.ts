@@ -9,10 +9,14 @@ suite("concurrency", (test) => {
     const c = new Container();
     c.load(
       createModule((m) =>
-        m.singleAsync(T, async () => {
-          await delay(30);
-          return { dispose: () => (disposed = true) };
-        }),
+        m.singleAsync(
+          T,
+          async () => {
+            await delay(30);
+            return { dispose: () => (disposed = true) };
+          },
+          { dispose: (x) => x.dispose() },
+        ),
       ),
     );
     const p = ignore(c.getAsync(T));
@@ -26,10 +30,14 @@ suite("concurrency", (test) => {
     const T = createAsyncToken<{ dispose(): void }>("ifFactory");
     let disposed = false;
     const mod = createModule((m) =>
-      m.factoryAsync(T, async () => {
-        await delay(30);
-        return { dispose: () => (disposed = true) };
-      }),
+      m.factoryAsync(
+        T,
+        async () => {
+          await delay(30);
+          return { dispose: () => (disposed = true) };
+        },
+        { dispose: (x) => x.dispose() },
+      ),
     );
     const c = new Container();
     c.load(mod);
@@ -49,11 +57,15 @@ suite("concurrency", (test) => {
     const childB = root.createScope();
     childA.load(
       createModule((m) =>
-        m.single(Slow, () => ({
-          dispose: async () => {
-            await delay(40);
-          },
-        })),
+        m.single(
+          Slow,
+          () => ({
+            dispose: async () => {
+              await delay(40);
+            },
+          }),
+          { dispose: (x) => x.dispose() },
+        ),
       ),
     );
     childB.load(
@@ -80,10 +92,14 @@ suite("concurrency", (test) => {
     const child = root.createScope();
     child.load(
       createModule((m) =>
-        m.singleAsync(T, async () => {
-          await delay(40);
-          return { dispose: () => (disposed = true) };
-        }),
+        m.singleAsync(
+          T,
+          async () => {
+            await delay(40);
+            return { dispose: () => (disposed = true) };
+          },
+          { dispose: (x) => x.dispose() },
+        ),
       ),
     );
     const p = ignore(child.getAsync(T));
@@ -105,10 +121,14 @@ suite("concurrency", (test) => {
       const T = createAsyncToken<{ dispose(): void }>(`race${i}`);
       let n = 0;
       const mod = createModule((m) =>
-        m.scopedAsync(T, async () => {
-          await delay(Math.random() * 4);
-          return { dispose: () => (n += 1) };
-        }),
+        m.scopedAsync(
+          T,
+          async () => {
+            await delay(Math.random() * 4);
+            return { dispose: () => (n += 1) };
+          },
+          { dispose: (x) => x.dispose() },
+        ),
       );
       child.load(mod);
       const p = ignore(child.getAsync(T));

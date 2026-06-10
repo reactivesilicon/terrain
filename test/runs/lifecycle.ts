@@ -90,7 +90,9 @@ suite("lifecycle: unload", (test) => {
   test("unload removes definitions and disposes instances", async () => {
     const T = createSyncToken<{ dispose(): void }>("ul");
     let disposed = 0;
-    const mod = createModule((m) => m.single(T, () => ({ dispose: () => (disposed += 1) })));
+    const mod = createModule((m) =>
+      m.single(T, () => ({ dispose: () => (disposed += 1) }), { dispose: (x) => x.dispose() }),
+    );
     const c = new Container();
     c.load(mod);
     c.get(T);
@@ -111,7 +113,9 @@ suite("lifecycle: unload", (test) => {
   test("unload disposes a scoped instance cached in a child scope", async () => {
     const T = createSyncToken<{ dispose(): void }>("ulChild");
     let disposed = 0;
-    const mod = createModule((m) => m.scoped(T, () => ({ dispose: () => (disposed += 1) })));
+    const mod = createModule((m) =>
+      m.scoped(T, () => ({ dispose: () => (disposed += 1) }), { dispose: (x) => x.dispose() }),
+    );
     const root = new Container();
     root.load(mod);
     const scope = root.createScope();
@@ -125,11 +129,15 @@ suite("lifecycle: unload", (test) => {
     const Repo = createSyncToken<{ dispose(): void }>("ulRepo");
     const order: string[] = [];
     const mod = createModule((m) => {
-      m.single(Db, () => ({ dispose: () => order.push("db") }));
-      m.single(Repo, (r) => {
-        r.get(Db);
-        return { dispose: () => order.push("repo") };
-      });
+      m.single(Db, () => ({ dispose: () => order.push("db") }), { dispose: (x) => x.dispose() });
+      m.single(
+        Repo,
+        (r) => {
+          r.get(Db);
+          return { dispose: () => order.push("repo") };
+        },
+        { dispose: (x) => x.dispose() },
+      );
     });
     const c = new Container();
     c.load(mod);
@@ -141,11 +149,15 @@ suite("lifecycle: unload", (test) => {
   test("unload surfaces disposal failures via AggregateError but still cleans up", async () => {
     const T = createSyncToken<{ dispose(): void }>("ulFail");
     const mod = createModule((m) =>
-      m.single(T, () => ({
-        dispose: () => {
-          throw new Error("boom");
-        },
-      })),
+      m.single(
+        T,
+        () => ({
+          dispose: () => {
+            throw new Error("boom");
+          },
+        }),
+        { dispose: (x) => x.dispose() },
+      ),
     );
     const c = new Container();
     c.load(mod);
@@ -260,10 +272,14 @@ suite("lifecycle: tree-wide locking", (test) => {
   test("ownership: a parent disposing while a child unloads does not orphan the child", async () => {
     const CT = createAsyncToken<{ dispose(): void }>("ownChild");
     const cm = createModule((m) =>
-      m.singleAsync(CT, async () => {
-        await delay(30);
-        return { dispose: () => {} };
-      }),
+      m.singleAsync(
+        CT,
+        async () => {
+          await delay(30);
+          return { dispose: () => {} };
+        },
+        { dispose: (x) => x.dispose() },
+      ),
     );
     const root = new Container();
     const child = root.createScope();

@@ -1,7 +1,6 @@
 import { DisposedContainerError } from "../errors";
 import type { AnyToken, AsyncToken, Token } from "../token";
-import type { AsyncDefinition, Disposable, ResolutionFrame } from "../types";
-import { isDisposable } from "../utils";
+import type { AsyncDefinition, Disposer, ResolutionFrame } from "../types";
 import type { ResolutionHost } from "./resolution-host";
 
 export const InstanceKinds = {
@@ -32,9 +31,9 @@ export class ResolutionCache {
     return { has: true, value: map.get(token) };
   }
 
-  commitSyncInstance<T>(kind: InstanceKind, token: Token<T>, instance: T): void {
+  commitSyncInstance<T>(kind: InstanceKind, token: Token<T>, instance: T, dispose?: Disposer<T>): void {
     this.instances(kind).set(token, instance);
-    this.host.trackDisposable(instance);
+    if (dispose) this.host.trackDisposable(instance, dispose);
   }
 
   // ── async cached resolution (singleton/scoped) ──
@@ -57,6 +56,7 @@ export class ResolutionCache {
       token: token,
       build: () => this.host.invokeProviderAsync(definition, chain),
       isStale: () => resolutionPromises.get(token) !== promise,
+      dispose: definition.dispose,
     });
     resolutionPromises.set(token, promise);
 
@@ -67,7 +67,9 @@ export class ResolutionCache {
 
     if (settledResolution.ok) {
       instances.set(token, settledResolution.value);
-      this.host.trackDisposable(settledResolution.value);
+      if (definition.dispose) {
+        this.host.trackDisposable(settledResolution.value, definition.dispose);
+      }
       resolutionPromises.delete(token);
       return settledResolution.value;
     }
@@ -89,6 +91,7 @@ export class ResolutionCache {
       token: token,
       build: () => this.host.invokeProviderAsync(definition, chain),
       isStale: () => false,
+      dispose: definition.dispose,
     });
     pendingTokenResolutionPromises.add(promise);
 
@@ -117,10 +120,12 @@ export class ResolutionCache {
     token,
     build,
     isStale,
+    dispose,
   }: {
     token: AsyncToken<any>;
     build: () => Promise<T>;
     isStale: () => boolean;
+    dispose?: Disposer<T> | undefined;
   }): Promise<T> {
     let instance: T;
     try {
@@ -129,16 +134,16 @@ export class ResolutionCache {
       throw this.host.wrapProviderError(token, error);
     }
     if (this.host.isTreeDisposed() || this.host.isUnloading(token) || isStale()) {
-      await this.disposeOrphan(instance);
+      await this.disposeOrphan(instance, dispose);
       throw new DisposedContainerError();
     }
     return instance;
   }
 
-  private async disposeOrphan(instance: unknown): Promise<void> {
-    if (!isDisposable(instance)) return;
+  private async disposeOrphan<T>(instance: T, dispose?: Disposer<T>): Promise<void> {
+    if (!dispose) return;
     try {
-      await instance.dispose();
+      await dispose(instance);
     } catch (error) {
       this.host.notifyDisposeError(error);
     }
@@ -156,14 +161,14 @@ export class ResolutionCache {
     );
   }
 
-  // Remove a token's cached instances, returning any disposables to be disposed
-  // by the caller (in its own reverse-creation order).
-  evictInstances(token: AnyToken<any>): Disposable[] {
-    const out: Disposable[] = [];
+  // Remove a token's cached instances, returning them so the caller can dispose
+  // the tracked ones (in its own reverse-creation order).
+  evictInstances(token: AnyToken<any>): unknown[] {
+    const out: unknown[] = [];
     for (const map of [this.singletonInstances, this.scopedInstances]) {
-      const instance = map.get(token);
+      if (!map.has(token)) continue;
+      out.push(map.get(token));
       map.delete(token);
-      if (isDisposable(instance)) out.push(instance);
     }
     return out;
   }

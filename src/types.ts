@@ -25,12 +25,26 @@ export type SyncProvider<T> = (resolver: SyncResolver) => T;
 export type AsyncProvider<T> = (resolver: AsyncResolver) => Promise<T>;
 export type Provider<T> = SyncProvider<T> | AsyncProvider<T>;
 
+/** Teardown registered with a definition. May be async even for sync tokens —
+ *  disposal always runs in an async context (dispose/unload/withScope). */
+export type Disposer<T> = (instance: T) => void | Promise<void>;
+
+/** Per-definition registration options. */
+export interface DefinitionOptions<T> {
+  /** Called with the instance when its container/scope is disposed or its
+   *  module unloaded (cached lifetimes), or when an in-flight result is
+   *  orphaned by teardown. Without it the container never touches the
+   *  instance at teardown — there is no dispose() duck-typing. */
+  dispose?: Disposer<T>;
+}
+
 /** Immutable once built (frozen by Module). */
 export type SyncDefinition<T> = Readonly<{
   token: Token<T>;
   lifetime: Lifetime;
   async: false;
   provider: SyncProvider<T>;
+  dispose?: Disposer<T>;
 }>;
 
 export type AsyncDefinition<T> = Readonly<{
@@ -38,13 +52,10 @@ export type AsyncDefinition<T> = Readonly<{
   lifetime: Lifetime;
   async: true;
   provider: AsyncProvider<T>;
+  dispose?: Disposer<T>;
 }>;
 
 export type Definition<T> = SyncDefinition<T> | AsyncDefinition<T>;
-
-export interface Disposable {
-  dispose(): void | Promise<void>;
-}
 
 export interface LoadOptions {
   /** Replace an existing definition in THIS container. Rejected if the token
