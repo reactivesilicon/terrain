@@ -37,7 +37,7 @@ It gives you:
 ## Quick start
 
 ```ts
-import { Container, createModule, createToken } from "terrain";
+import { Container, createModule, createSyncToken } from "terrain";
 
 class Logger {
   info(message: string): void {
@@ -53,8 +53,8 @@ class UserService {
   }
 }
 
-const LoggerToken = createToken<Logger>("Logger");
-const UserServiceToken = createToken<UserService>("UserService");
+const LoggerToken = createSyncToken<Logger>("Logger");
+const UserServiceToken = createSyncToken<UserService>("UserService");
 
 const appModule = createModule((module) => {
   module.single(LoggerToken, () => new Logger());
@@ -78,9 +78,9 @@ userService.createUser("Ada");
 Dependencies are identified by typed tokens.
 
 ```ts
-import { createToken, createAsyncToken } from "terrain";
+import { createSyncToken, createAsyncToken } from "terrain";
 
-const ConfigToken = createToken<{ databaseUrl: string }>("Config");
+const ConfigToken = createSyncToken<{ databaseUrl: string }>("Config");
 const DatabaseToken = createAsyncToken<Database>("Database");
 ```
 
@@ -93,7 +93,7 @@ const config = container.get(ConfigToken);
 // { databaseUrl: string }
 ```
 
-A token also carries its resolution mode. `createToken` makes a `Token<T>` for
+A token also carries its resolution mode. `createSyncToken` makes a `Token<T>` for
 synchronous providers, resolved with `get`. `createAsyncToken` makes an
 `AsyncToken<T>` for async providers, resolved with `getAsync`. The two are not
 interchangeable: passing an async token to `get` (or registering it with a sync
@@ -370,8 +370,8 @@ Throws `MissingDependencyError`.
 ### Circular dependencies
 
 ```ts
-const AToken = createToken<A>("A");
-const BToken = createToken<B>("B");
+const AToken = createSyncToken<A>("A");
+const BToken = createSyncToken<B>("B");
 
 const appModule = createModule((module) => {
   module.single(AToken, (resolver) => new A(resolver.get(BToken)));
@@ -415,7 +415,7 @@ This keeps resolution ownership predictable.
 A common test pattern is to load a test module instead of the production module.
 
 ```ts
-const RealApiToken = createToken<ApiClient>("ApiClient");
+const RealApiToken = createSyncToken<ApiClient>("ApiClient");
 
 const testModule = createModule((module) => {
   module.single(RealApiToken, () => new FakeApiClient());
@@ -482,10 +482,10 @@ This is compile-time protection, not runtime security. Code using `as any` can s
 
 ## API
 
-### `createToken`
+### `createSyncToken`
 
 ```ts
-function createToken<T>(description: string): Token<T>;
+function createSyncToken<T>(description: string): Token<T>;
 ```
 
 Creates a typed dependency token.

@@ -1,4 +1,4 @@
-import { Container, createModule, createAsyncToken, createToken } from "../../src";
+import { Container, createModule, createAsyncToken, createSyncToken } from "../../src";
 import { DisposedContainerError } from "../../src";
 import { suite, assert, assertEqual, assertThrows, isInstance, ignore, delay } from "../harness";
 
@@ -41,8 +41,8 @@ suite("concurrency", (test) => {
   });
 
   test("child-local resolution is blocked while a parent is disposing", async () => {
-    const Slow = createToken<{ dispose(): Promise<void> }>("clSlow");
-    const Local = createToken<object>("clLocal");
+    const Slow = createSyncToken<{ dispose(): Promise<void> }>("clSlow");
+    const Local = createSyncToken<object>("clLocal");
     let localBuilt = 0;
     const root = new Container();
     const childA = root.createScope();
@@ -135,8 +135,8 @@ suite("concurrency", (test) => {
   });
 
   test("deep scope chain resolves and per-resolve ancestor walk stays cheap", () => {
-    const Root = createToken<number>("deepRoot");
-    const Leaf = createToken<{ n: number }>("deepLeaf");
+    const Root = createSyncToken<number>("deepRoot");
+    const Leaf = createSyncToken<{ n: number }>("deepLeaf");
     const root = new Container();
     root.load(createModule((m) => m.single(Root, () => 42)));
     let c: Container = root;

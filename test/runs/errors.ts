@@ -1,4 +1,4 @@
-import { Container, createAsyncToken, createModule, createToken, isAsyncToken } from "../../src";
+import { Container, createAsyncToken, createModule, createSyncToken, isAsyncToken } from "../../src";
 import {
   type AsyncResolver,
   type AsyncToken,
@@ -16,14 +16,14 @@ import { suite, assert, assertEqual, assertThrows, isInstance } from "../harness
 
 suite("errors: guardrails", (test) => {
   test("missing dependency throws MissingDependencyError", async () => {
-    const T = createToken<number>("missing");
+    const T = createSyncToken<number>("missing");
     const c = new Container();
     await assertThrows(() => c.get(T), isInstance(MissingDependencyError));
   });
 
   test("direct circular dependency is detected", async () => {
-    const A = createToken<unknown>("cA");
-    const B = createToken<unknown>("cB");
+    const A = createSyncToken<unknown>("cA");
+    const B = createSyncToken<unknown>("cB");
     const c = new Container();
     c.load(
       createModule((m) => {
@@ -35,9 +35,9 @@ suite("errors: guardrails", (test) => {
   });
 
   test("deep circular dependency is detected", async () => {
-    const A = createToken<unknown>("dcA");
-    const B = createToken<unknown>("dcB");
-    const D = createToken<unknown>("dcC");
+    const A = createSyncToken<unknown>("dcA");
+    const B = createSyncToken<unknown>("dcB");
+    const D = createSyncToken<unknown>("dcC");
     const c = new Container();
     c.load(
       createModule((m) => {
@@ -50,8 +50,8 @@ suite("errors: guardrails", (test) => {
   });
 
   test("singleton depending on scoped throws CaptiveDependencyError", async () => {
-    const Svc = createToken<unknown>("capSvc");
-    const Ctx = createToken<unknown>("capCtx");
+    const Svc = createSyncToken<unknown>("capSvc");
+    const Ctx = createSyncToken<unknown>("capCtx");
     const c = new Container();
     c.load(
       createModule((m) => {
@@ -63,9 +63,9 @@ suite("errors: guardrails", (test) => {
   });
 
   test("transitive singleton -> factory -> scoped is captive", async () => {
-    const Svc = createToken<unknown>("tcapSvc");
-    const Fac = createToken<unknown>("tcapFac");
-    const Ctx = createToken<unknown>("tcapCtx");
+    const Svc = createSyncToken<unknown>("tcapSvc");
+    const Fac = createSyncToken<unknown>("tcapFac");
+    const Ctx = createSyncToken<unknown>("tcapCtx");
     const c = new Container();
     c.load(
       createModule((m) => {
@@ -78,8 +78,8 @@ suite("errors: guardrails", (test) => {
   });
 
   test("factory -> scoped (no singleton ancestor) is allowed", () => {
-    const Fac = createToken<{ c: unknown }>("okFac");
-    const Ctx = createToken<unknown>("okCtx");
+    const Fac = createSyncToken<{ c: unknown }>("okFac");
+    const Ctx = createSyncToken<unknown>("okCtx");
     const root = new Container();
     root.load(
       createModule((m) => {
@@ -92,7 +92,7 @@ suite("errors: guardrails", (test) => {
   });
 
   test("child cannot shadow an ancestor token", async () => {
-    const T = createToken<number>("shUp");
+    const T = createSyncToken<number>("shUp");
     const root = new Container();
     root.load(createModule((m) => m.single(T, () => 1)));
     const child = root.createScope();
@@ -103,7 +103,7 @@ suite("errors: guardrails", (test) => {
   });
 
   test("ancestor cannot define a token already in a descendant", async () => {
-    const T = createToken<number>("shDown");
+    const T = createSyncToken<number>("shDown");
     const root = new Container();
     const child = root.createScope();
     child.load(createModule((m) => m.single(T, () => 1)));
@@ -111,7 +111,7 @@ suite("errors: guardrails", (test) => {
   });
 
   test("provider construction error is wrapped with token context", async () => {
-    const T = createToken<number>("wrap");
+    const T = createSyncToken<number>("wrap");
     const c = new Container();
     c.load(
       createModule((m) =>
@@ -135,15 +135,15 @@ suite("errors: guardrails", (test) => {
   });
 
   test("framework errors are not re-wrapped as provider errors", async () => {
-    const A = createToken<unknown>("nwA");
-    const Missing = createToken<unknown>("nwMissing");
+    const A = createSyncToken<unknown>("nwA");
+    const Missing = createSyncToken<unknown>("nwMissing");
     const c = new Container();
     c.load(createModule((m) => m.single(A, (r) => r.get(Missing))));
     await assertThrows(() => c.get(A), isInstance(MissingDependencyError));
   });
 
   test("a child cannot resolve through a disposed ancestor", async () => {
-    const T = createToken<number>("discAnc");
+    const T = createSyncToken<number>("discAnc");
     const root = new Container();
     root.load(createModule((m) => m.single(T, () => 5)));
     const child = root.createScope();
@@ -152,7 +152,7 @@ suite("errors: guardrails", (test) => {
   });
 
   test("getAsync() of a sync provider throws SyncProviderError (runtime backstop)", async () => {
-    const T = createToken<number>("sMisuse");
+    const T = createSyncToken<number>("sMisuse");
     const c = new Container();
     c.load(createModule((m) => m.single(T, () => 1)));
     // The token brand makes this a compile error now; cast to exercise the
@@ -161,7 +161,7 @@ suite("errors: guardrails", (test) => {
   });
 
   test("token brands reject sync/async misuse at compile time", () => {
-    const S = createToken<number>("brandSync");
+    const S = createSyncToken<number>("brandSync");
     const A = createAsyncToken<number>("brandAsync");
     // Never executed — typecheck:test fails if any of these stops being an error.
     void function compileOnly(c: Container, sync: SyncResolver, async: AsyncResolver) {

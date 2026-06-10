@@ -1,11 +1,11 @@
-import { Container, createModule, createToken } from "../../src";
+import { Container, createModule, createSyncToken } from "../../src";
 import { DuplicateDefinitionError } from "../../src";
 import { suite, assert, assertEqual, assertThrows, isInstance } from "../harness";
 
 suite("modules", (test) => {
   test("multiple modules compose", () => {
-    const Logger = createToken<(m: string) => void>("mLogger");
-    const Mailer = createToken<{ send(to: string): string }>("mMailer");
+    const Logger = createSyncToken<(m: string) => void>("mLogger");
+    const Mailer = createSyncToken<{ send(to: string): string }>("mMailer");
     const infra = createModule((m) => m.single(Logger, () => () => {}));
     const feature = createModule((m) =>
       m.single(Mailer, (r) => ({
@@ -22,7 +22,7 @@ suite("modules", (test) => {
   });
 
   test("duplicate token within a single module throws at build time", () => {
-    const T = createToken<number>("mDup");
+    const T = createSyncToken<number>("mDup");
     let threw = false;
     try {
       createModule((m) => {
@@ -36,7 +36,7 @@ suite("modules", (test) => {
   });
 
   test("Module does not expose a mutable definitions map", () => {
-    const T = createToken<number>("mImm");
+    const T = createSyncToken<number>("mImm");
     const mod = createModule((m) => m.single(T, () => 1)) as unknown as Record<string, unknown>;
     assertEqual(mod.definitions, undefined, "internal map must not be exposed");
     assertEqual(typeof mod.entries, "function");
@@ -44,7 +44,7 @@ suite("modules", (test) => {
   });
 
   test("Definition objects are frozen", () => {
-    const T = createToken<number>("mFrozen");
+    const T = createSyncToken<number>("mFrozen");
     const mod = createModule((m) => m.single(T, () => 1));
     let mutated = true;
     for (const [, def] of mod.entries()) {
@@ -59,7 +59,7 @@ suite("modules", (test) => {
   });
 
   test("override across loads works after a clean reload", async () => {
-    const T = createToken<string>("mReload");
+    const T = createSyncToken<string>("mReload");
     const v1 = createModule((m) => m.single(T, () => "v1"));
     const v2 = createModule((m) => m.single(T, () => "v2"));
     const c = new Container();
@@ -71,7 +71,7 @@ suite("modules", (test) => {
   });
 
   test("unload then reload from a different container is fine", () => {
-    const T = createToken<number>("mIndep");
+    const T = createSyncToken<number>("mIndep");
     const mod = createModule((m) => m.single(T, () => 1));
     const a = new Container();
     const b = new Container();
@@ -83,7 +83,7 @@ suite("modules", (test) => {
   });
 
   test("loading the same module twice without override throws", async () => {
-    const T = createToken<number>("mTwice");
+    const T = createSyncToken<number>("mTwice");
     const mod = createModule((m) => m.single(T, () => 1));
     const c = new Container();
     c.load(mod);

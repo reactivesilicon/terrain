@@ -1,10 +1,10 @@
-import { Container, createModule, createToken } from "../../src";
+import { Container, createModule, createSyncToken } from "../../src";
 import { assert, assertEqual, suite } from "../harness";
 
 suite("resolution", (test) => {
   test("providers receive a resolver and can pull dependencies", () => {
-    const A = createToken<{ tag: string }>("A");
-    const B = createToken<{ a: { tag: string } }>("B");
+    const A = createSyncToken<{ tag: string }>("A");
+    const B = createSyncToken<{ a: { tag: string } }>("B");
     const c = new Container();
     c.load(
       createModule((m) => {
@@ -16,9 +16,9 @@ suite("resolution", (test) => {
   });
 
   test("deep dependency chain resolves", () => {
-    const A = createToken<{ n: number }>("dA");
-    const B = createToken<{ n: number }>("dB");
-    const D = createToken<{ n: number }>("dC");
+    const A = createSyncToken<{ n: number }>("dA");
+    const B = createSyncToken<{ n: number }>("dB");
+    const D = createSyncToken<{ n: number }>("dC");
     const c = new Container();
     c.load(
       createModule((m) => {
@@ -31,14 +31,14 @@ suite("resolution", (test) => {
   });
 
   test("child resolves an ancestor-defined token", () => {
-    const T = createToken<number>("anc");
+    const T = createSyncToken<number>("anc");
     const root = new Container();
     root.load(createModule((m) => m.single(T, () => 9)));
     assertEqual(root.createScope().get(T), 9);
   });
 
   test("root singleton is shared across child scopes", () => {
-    const T = createToken<object>("rootSingle");
+    const T = createSyncToken<object>("rootSingle");
     const root = new Container();
     root.load(createModule((m) => m.single(T, () => ({}))));
     const a = root.createScope();
@@ -47,7 +47,7 @@ suite("resolution", (test) => {
   });
 
   test("sibling scopes with their own definitions are isolated", () => {
-    const T = createToken<number>("sib");
+    const T = createSyncToken<number>("sib");
     const root = new Container();
     const a = root.createScope();
     const b = root.createScope();
@@ -58,7 +58,7 @@ suite("resolution", (test) => {
   });
 
   test("sync provider's resolver does not expose getAsync at runtime", () => {
-    const T = createToken<number>("noAsync");
+    const T = createSyncToken<number>("noAsync");
     let hadGetAsync = true;
     const c = new Container();
     c.load(
@@ -74,8 +74,8 @@ suite("resolution", (test) => {
   });
 
   test("has() reflects presence", () => {
-    const T = createToken<number>("present");
-    const U = createToken<number>("absent");
+    const T = createSyncToken<number>("present");
+    const U = createSyncToken<number>("absent");
     const c = new Container();
     c.load(createModule((m) => m.single(T, () => 1)));
     assertEqual(c.has(T), true);
@@ -83,8 +83,8 @@ suite("resolution", (test) => {
   });
 
   test("inject() is lazy and honors lifetime", () => {
-    const S = createToken<object>("lazyS");
-    const F = createToken<object>("lazyF");
+    const S = createSyncToken<object>("lazyS");
+    const F = createSyncToken<object>("lazyF");
     let built = 0;
     const c = new Container();
     c.load(

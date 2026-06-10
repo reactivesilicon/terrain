@@ -1,11 +1,11 @@
-import { Container, createModule, createAsyncToken, createToken } from "../../src";
+import { Container, createModule, createAsyncToken, createSyncToken } from "../../src";
 import { DisposedContainerError } from "../../src";
 import { suite, assert, assertEqual, assertThrows, isInstance, delay } from "../harness";
 
 suite("disposal", (test) => {
   test("disposes in reverse creation order", async () => {
-    const Db = createToken<{ dispose(): void }>("db");
-    const Repo = createToken<{ dispose(): void }>("repo");
+    const Db = createSyncToken<{ dispose(): void }>("db");
+    const Repo = createSyncToken<{ dispose(): void }>("repo");
     const order: string[] = [];
     const c = new Container();
     c.load(
@@ -23,7 +23,7 @@ suite("disposal", (test) => {
   });
 
   test("singleton disposable is disposed", async () => {
-    const T = createToken<{ dispose(): void }>("singleDisp");
+    const T = createSyncToken<{ dispose(): void }>("singleDisp");
     let n = 0;
     const c = new Container();
     c.load(createModule((m) => m.single(T, () => ({ dispose: () => (n += 1) }))));
@@ -33,7 +33,7 @@ suite("disposal", (test) => {
   });
 
   test("factory instances are not auto-tracked for disposal", async () => {
-    const T = createToken<{ dispose(): void }>("factoryDisp");
+    const T = createSyncToken<{ dispose(): void }>("factoryDisp");
     let n = 0;
     const c = new Container();
     c.load(createModule((m) => m.factory(T, () => ({ dispose: () => (n += 1) }))));
@@ -43,7 +43,7 @@ suite("disposal", (test) => {
   });
 
   test("dispose is idempotent", async () => {
-    const T = createToken<{ dispose(): void }>("idem");
+    const T = createSyncToken<{ dispose(): void }>("idem");
     let n = 0;
     const c = new Container();
     c.load(createModule((m) => m.single(T, () => ({ dispose: () => (n += 1) }))));
@@ -73,7 +73,7 @@ suite("disposal", (test) => {
   });
 
   test("disposing root cascades to child scopes", async () => {
-    const T = createToken<{ dispose(): void }>("cascade");
+    const T = createSyncToken<{ dispose(): void }>("cascade");
     let n = 0;
     const root = new Container();
     root.load(createModule((m) => m.scoped(T, () => ({ dispose: () => (n += 1) }))));
@@ -84,7 +84,7 @@ suite("disposal", (test) => {
   });
 
   test("a disposed container rejects further resolution", async () => {
-    const T = createToken<number>("postDispose");
+    const T = createSyncToken<number>("postDispose");
     const c = new Container();
     c.load(createModule((m) => m.single(T, () => 1)));
     await c.dispose();
@@ -156,7 +156,7 @@ suite("disposal", (test) => {
   });
 
   test("dispose collects disposal errors into an AggregateError", async () => {
-    const T = createToken<{ dispose(): void }>("disposeThrows");
+    const T = createSyncToken<{ dispose(): void }>("disposeThrows");
     const c = new Container();
     c.load(
       createModule((m) =>
@@ -182,9 +182,9 @@ suite("disposal", (test) => {
   });
 
   test("disposes a 3-chain in reverse creation order", async () => {
-    const A = createToken<{ dispose(): void }>("a3");
-    const B = createToken<{ dispose(): void }>("b3");
-    const D = createToken<{ dispose(): void }>("c3");
+    const A = createSyncToken<{ dispose(): void }>("a3");
+    const B = createSyncToken<{ dispose(): void }>("b3");
+    const D = createSyncToken<{ dispose(): void }>("c3");
     const order: string[] = [];
     const c = new Container();
     c.load(
@@ -206,9 +206,9 @@ suite("disposal", (test) => {
   });
 
   test("one throwing disposal does not prevent the others", async () => {
-    const A = createToken<{ dispose(): void }>("aFail");
-    const B = createToken<{ dispose(): void }>("bFail");
-    const D = createToken<{ dispose(): void }>("cFail");
+    const A = createSyncToken<{ dispose(): void }>("aFail");
+    const B = createSyncToken<{ dispose(): void }>("bFail");
+    const D = createSyncToken<{ dispose(): void }>("cFail");
     const disposed: string[] = [];
     const c = new Container();
     c.load(
@@ -243,8 +243,8 @@ suite("disposal", (test) => {
   });
 
   test("mixed singleton and scoped disposables dispose in reverse creation order", async () => {
-    const Single = createToken<{ dispose(): void }>("mixSingle");
-    const Scoped = createToken<{ dispose(): void }>("mixScoped");
+    const Single = createSyncToken<{ dispose(): void }>("mixSingle");
+    const Scoped = createSyncToken<{ dispose(): void }>("mixScoped");
     const order: string[] = [];
     const root = new Container();
     root.load(
@@ -266,8 +266,8 @@ suite("disposal", (test) => {
   });
 
   test("unload disposes evicted instances in reverse creation order", async () => {
-    const A = createToken<{ dispose(): void }>("ulA");
-    const B = createToken<{ dispose(): void }>("ulB");
+    const A = createSyncToken<{ dispose(): void }>("ulA");
+    const B = createSyncToken<{ dispose(): void }>("ulB");
     const order: string[] = [];
     const mod = createModule((m) => {
       m.single(A, () => ({ dispose: () => order.push("a") }));

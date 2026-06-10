@@ -1,10 +1,10 @@
-import { Container, createModule, createToken } from "../../src";
+import { Container, createModule, createSyncToken } from "../../src";
 import { DisposedContainerError } from "../../src";
 import { suite, assert, assertEqual, assertThrows, isInstance } from "../harness";
 
 suite("scopes", (test) => {
   test("createScope inherits parent definitions", () => {
-    const T = createToken<number>("inh");
+    const T = createSyncToken<number>("inh");
     const root = new Container();
     root.load(createModule((m) => m.single(T, () => 5)));
     assertEqual(root.createScope().get(T), 5);
@@ -17,7 +17,7 @@ suite("scopes", (test) => {
   });
 
   test("withScope disposes its scope afterwards", async () => {
-    const T = createToken<{ dispose(): void }>("ws");
+    const T = createSyncToken<{ dispose(): void }>("ws");
     let disposed = 0;
     const root = new Container();
     root.load(createModule((m) => m.scoped(T, () => ({ dispose: () => (disposed += 1) }))));
@@ -40,7 +40,7 @@ suite("scopes", (test) => {
   });
 
   test("withScope aggregates body + disposal errors (flattened)", async () => {
-    const T = createToken<{ dispose(): void }>("wsAgg");
+    const T = createSyncToken<{ dispose(): void }>("wsAgg");
     const root = new Container();
     root.load(
       createModule((m) =>
