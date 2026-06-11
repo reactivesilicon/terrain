@@ -1,6 +1,6 @@
 {
   "name": "terrain-di",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A pragmatic DSL-based TypeScript Dependency Injection framework. No decorators, no reflection, no framework dependency",
   "keywords": [
     "container",
