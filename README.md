@@ -1,8 +1,10 @@
 # terrain
 
-A pragmatic TypeScript Dependency Injection framework
+[![CI](https://github.com/reactivesilicon/terrain/actions/workflows/ci.yml/badge.svg)](https://github.com/reactivesilicon/terrain/actions/workflows/ci.yml)
 
-No decorators. No reflection. No framework dependency. Just a small, explicit, DSL-based container with typed tokens, modules, scopes, async providers, disposal, and lifecycle safety.
+A pragmatic TypeScript dependency injection container.
+
+No decorators. No reflection. No runtime dependencies. Just a small, explicit container with typed tokens, modules, scopes, async providers, deterministic disposal, and lifecycle safety — where wrong wiring fails loudly, and as much of it as possible fails at compile time.
 
 ## Installation
 
@@ -16,23 +18,49 @@ Or with npm:
 npm install terrain-di
 ```
 
+## Contents
+
+- [Why terrain?](#why-terrain)
+- [Quick start](#quick-start)
+- [Tokens](#tokens)
+- [Modules](#modules)
+- [Lifetimes](#lifetimes) · [withScope](#withscope)
+- [Async providers](#async-providers) · [Eager initialization](#eager-initialization)
+- [Sync and async resolvers](#sync-and-async-resolvers)
+- [Lazy injection](#lazy-injection) · [Accessors](#accessors)
+- [Disposal](#disposal) · [Lifecycle semantics](#lifecycle-semantics)
+- [Unload and hot-swap](#unload-and-hot-swap) · [Testing with overrides](#testing-with-overrides)
+- [Guardrails](#guardrails) · [Known limitations](#known-limitations)
+- [Error types](#error-types) · [API](#api)
+
 ## Why terrain?
 
 `terrain` is designed for TypeScript projects that want dependency injection without runtime magic.
 
-It gives you:
+**Type safety beyond `get<T>()`:**
 
-- typed tokens
-- singleton, factory, and scoped lifetimes
-- sync and async providers
-- module-based registration
-- child scopes
-- deterministic disposal
-- circular dependency detection
-- captive dependency detection
-- lazy injection helpers
-- safe module unload/reload
-- lifecycle guards for async teardown
+- typed tokens — `get(token)` returns `T`, no casts
+- the sync/async split is compile-time: `get()` rejects async tokens, `getAsync()` rejects sync ones
+- per-definition options (`dispose`, `eager`) typed to the token's value
+
+**Lifecycle, handled:**
+
+- singleton, factory, and scoped lifetimes; sync and async providers
+- hierarchical scopes for per-request work (`createScope` / `withScope`)
+- explicit, per-definition disposal in reverse creation order
+- eager boot (`{ eager: true }` + `container.start()`) so connections fail at startup, not on the first request
+- safe module unload/hot-swap
+
+**Wrong wiring fails loudly:**
+
+- circular and captive dependency detection
+- shadowing and duplicate-definition rejection
+- unload refuses to evict definitions that live instances still depend on
+- in-flight async work that outlives a teardown is orphaned and disposed, never leaked into a dead container
+
+**Call-site ergonomics:**
+
+- lazy getters (`inject` / `injectAsync`) and token-free accessors (`createAccessors`)
 
 ## Quick start
 
@@ -116,13 +144,13 @@ Load a module into a container:
 ```ts
 const container = new Container();
 
-container.load(module);
+container.load(appModule);
 ```
 
 Unload a module:
 
 ```ts
-await container.unload(module);
+await container.unload(appModule);
 ```
 
 A module can only be unloaded from the container it was loaded into, and only by the module object that loaded the definitions. After an override, unload the replacement module — a stale module object is rejected with `ModuleOwnershipError`.
@@ -131,7 +159,7 @@ A module can only be unloaded from the container it was loaded into, and only by
 
 ### Singleton
 
-One instance per owning container.
+One instance for the whole tree, cached on the container that owns the definition.
 
 ```ts
 module.single(LoggerToken, () => new Logger());
@@ -235,12 +263,12 @@ callers that bypass the type system, the runtime still throws
 `AsyncProviderError` (and `getAsync` on a sync definition throws
 `SyncProviderError`).
 
-Available async registration methods (each requires an `AsyncToken`):
+Available async registration methods (each requires a token from `createAsyncToken`):
 
 ```ts
-module.singleAsync(AsyncToken, async (resolver) => value);
-module.factoryAsync(AsyncToken, async (resolver) => value);
-module.scopedAsync(AsyncToken, async (resolver) => value);
+module.singleAsync(databaseToken, async (resolver) => value);
+module.factoryAsync(connectionToken, async (resolver) => value);
+module.scopedAsync(transactionToken, async (resolver) => value);
 ```
 
 ## Eager initialization
@@ -287,6 +315,16 @@ module.singleAsync(ServiceToken, async (resolver) => {
 ```
 
 Sync providers do not receive `getAsync`. This prevents accidentally hiding async construction behind a sync API.
+
+Both resolvers expose `has(token)` for probing optional dependencies:
+
+```ts
+module.single(MetricsToken, (resolver) => {
+  return new Metrics(resolver.has(StatsdToken) ? resolver.get(StatsdToken) : null);
+});
+```
+
+Within a resolver, `has(t)` implies `t` is resolvable from it — so a sync resolver's `has` accepts only sync tokens, while an async resolver's accepts both kinds.
 
 ## Lazy injection
 
@@ -389,7 +427,7 @@ A disposed ancestor makes the entire subtree unusable. Child scopes cannot conti
 
 `dispose()` is idempotent. Calling it more than once is safe.
 
-Factories are caller-owned after successful construction. During teardown, in-flight factory providers are awaited. If they finish after their token was unloaded or their container tree was disposed, their result is treated as an orphan, disposed if possible, and the caller receives `DisposedContainerError`.
+During teardown, every in-flight async resolution — singleton, scoped, or factory — is awaited. A provider that finishes after its token was unloaded or its container tree was disposed has its result treated as an orphan: it is disposed via its registered disposer (failures reported to `onDisposeError`), and the caller receives `DisposedContainerError` instead of an instance from a dead container.
 
 ## Unload and hot-swap
 
@@ -403,13 +441,13 @@ container.load(newModule);
 
 Unload is refused with `DependentInstanceError` while a live instance outside the module depends on one of its definitions — otherwise that instance would be left holding a disposed dependency. Unload or dispose the dependents first (or unload everything in one module). The check is conservative: any token a provider resolved during construction counts as captured. Its limit: references held by application code (a top-level `get()` result) cannot be tracked.
 
-You cannot override a token while it has a cached or in-flight instance.
+A definition can also be replaced in place, without unloading:
 
 ```ts
-container.load(module, { override: true });
+container.load(replacementModule, { override: true });
 ```
 
-Override is rejected if the existing definition is in use.
+Override is only legal while the token is unused — if it already has a cached or in-flight instance anywhere in the tree, the load is rejected with `DefinitionInUseError`, so wiring can never be swapped under a live object graph.
 
 ## Guardrails
 
@@ -466,27 +504,21 @@ This keeps resolution ownership predictable.
 
 ## Testing with overrides
 
-A common test pattern is to load a test module instead of the production module.
+Load the real wiring, then override just the tokens the test needs to fake — module granularity can follow your domain, not your mocks:
 
 ```ts
-const RealApiToken = createSyncToken<ApiClient>("ApiClient");
-
-const testModule = createModule((module) => {
-  module.single(RealApiToken, () => new FakeApiClient());
+const fakes = createModule((module) => {
+  module.single(ApiClientToken, () => new FakeApiClient());
+  module.single(ClockToken, () => ({ now: () => 1234 }));
 });
 
 const container = new Container();
-
-container.load(testModule);
+container.load(appModule); // the real thing, all 30 tokens
+container.load(fakes, { override: true }); // replace exactly two of them
+await container.start(); // eager definitions construct the fakes
 ```
 
-For hot replacement, unload first:
-
-```ts
-await container.unload(oldModule);
-
-container.load(testModule);
-```
+This works because resolution is lazy and eager construction happens at `start()`, not `load()` — at override time nothing has been built yet. Overriding after something resolved is rejected (`DefinitionInUseError`); build a fresh container per test, or `unload` first.
 
 ## Known limitations
 
@@ -512,6 +544,7 @@ import {
   ModuleOwnershipError,
   ProviderExecutionError,
   ShadowedDefinitionError,
+  SyncProviderError,
 } from "terrain-di";
 ```
 
@@ -543,13 +576,15 @@ This is compile-time protection, not runtime security. Code using `as any` can s
 
 ## API
 
-### `createSyncToken`
+### Tokens
 
 ```ts
 function createSyncToken<T>(description: string): Token<T>;
+function createAsyncToken<T>(description: string): AsyncToken<T>;
+function isAsyncToken(token: AnyToken<unknown>): token is AsyncToken<unknown>;
 ```
 
-Creates a typed dependency token.
+`Token<T>` resolves with `get`, `AsyncToken<T>` with `getAsync`; `AnyToken<T>` is their union, accepted where the mode does not matter (`has`). Tokens print readably (`String(token)`, `console.log`, `JSON.stringify`) with their mode, a debug id, and the description.
 
 ### `createModule`
 
@@ -557,7 +592,20 @@ Creates a typed dependency token.
 function createModule(setup: (builder: ModuleBuilder) => void): Module;
 ```
 
-Creates a module.
+Registration methods — sync methods take a `Token`, async methods an `AsyncToken`:
+
+```ts
+module.single(token, provider, options?); // options: { dispose?, eager? }
+module.singleAsync(token, provider, options?); // options: { dispose?, eager? }
+
+module.factory(token, provider, options?); // options: { dispose? }
+module.factoryAsync(token, provider, options?); // options: { dispose? }
+
+module.scoped(token, provider, options?); // options: { dispose? }
+module.scopedAsync(token, provider, options?); // options: { dispose? }
+```
+
+`dispose: (instance: T) => void | Promise<void>` registers teardown; `eager: true` (singletons only) marks the definition for `container.start()`.
 
 ### `Container`
 
@@ -566,45 +614,35 @@ const container = new Container();
 const container = new Container({ onDisposeError: (error) => console.error(error) });
 ```
 
-`onDisposeError` is called when an in-flight async instance finishes constructing after its token was already unloaded or its container disposed. The result is treated as an orphan and disposed immediately. Errors from that orphan disposal are reported here. Errors from normal `dispose()` or `unload()` are thrown directly from those methods, not reported via this callback.
-
-Methods:
+`onDisposeError` observes disposal failures of orphaned in-flight instances only — a resolution that finished after its token was already unloaded or its container disposed. Failures during normal `dispose()`/`unload()` surface in the `AggregateError` those methods throw instead.
 
 ```ts
-container.load(module);
-container.load(module, { override: true });
-await container.unload(module);
+container.load(module); // sync; throws on duplicate/shadowed tokens
+container.load(module, { override: true }); // replace unused definitions in place
+await container.unload(module); // evict + dispose; refuses live dependents
 
-container.get(Token);
-await container.getAsync(AsyncToken);
+container.get(token); // Token<T> -> T
+await container.getAsync(asyncToken); // AsyncToken<T> -> Promise<T>
+container.has(anyToken); // either kind
 
-await container.start();
+await container.start(); // construct eager singletons, in parallel
 
-container.has(Token); // accepts Token or AsyncToken
+container.inject(token); // () => T, lazy
+container.injectAsync(asyncToken); // () => Promise<T>, lazy
 
-container.inject(Token);
-container.injectAsync(AsyncToken);
+container.createScope(); // child Container
+await container.withScope(async (scope) => result); // auto-disposed; returns result
 
-container.createScope();
-await container.withScope(async (scope) => {});
-
-await container.dispose();
+await container.dispose(); // reverse-order teardown, cascades to scopes; idempotent
 ```
 
-### `ModuleBuilder`
-
-Registration methods:
+### `createAccessors`
 
 ```ts
-module.single(Token, provider);
-module.singleAsync(Token, provider);
-
-module.factory(Token, provider);
-module.factoryAsync(Token, provider);
-
-module.scoped(Token, provider);
-module.scopedAsync(Token, provider);
+function createAccessors<S extends Record<string, AnyToken<unknown>>>(container: Container, spec: S): Accessors<S>;
 ```
+
+Maps a name → token spec to typed lazy accessors: sync tokens become `() => T`, async tokens `() => Promise<T>`.
 
 ## License
 
