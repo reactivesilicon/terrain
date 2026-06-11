@@ -13,8 +13,6 @@ import {
 } from "./types";
 import { tokenName } from "./utils";
 
-// The addNonSingleton path is structurally singleton-free: it cannot receive
-// the Singleton lifetime, just as it cannot carry the eager option.
 type NonSingletonLifetime = Exclude<Lifetime, typeof Lifetimes.Singleton>;
 
 declare const MODULE_BRAND: unique symbol;
