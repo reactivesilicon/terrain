@@ -5,12 +5,17 @@ import {
   type AsyncProvider,
   type Definition,
   type DefinitionOptions,
+  type SingletonDefinitionOptions,
   type Lifetime,
   Lifetimes,
   type SyncDefinition,
   type SyncProvider,
 } from "./types";
 import { tokenName } from "./utils";
+
+// The shared add/addAsync path is structurally singleton-free: it cannot
+// receive the Singleton lifetime, just as it cannot carry the eager option.
+type NonSingletonLifetime = Exclude<Lifetime, typeof Lifetimes.Singleton>;
 
 // Non-exported brand: prevents a plain object literal from satisfying Module
 // structurally. Modules can only come from createModule()/ModuleBuilder.
@@ -49,14 +54,56 @@ class BuiltModule implements Module {
 export class ModuleBuilder {
   private readonly definitions = new Map<AnyToken<any>, Definition<any>>();
 
-  private add<T>(token: Token<T>, lifetime: Lifetime, provider: SyncProvider<T>, options?: DefinitionOptions<T>): void {
+  private assertNewToken(token: AnyToken<any>): void {
     if (this.definitions.has(token)) {
       throw new DuplicateDefinitionError(tokenName(token));
     }
+  }
+
+  // Singleton registration is the only path that reads `eager`; the shared
+  // add/addAsync below cannot carry it even if a caller smuggles the option
+  // past the (literal-only) excess-property check.
+  private addSingleton<T>(token: Token<T>, provider: SyncProvider<T>, options?: SingletonDefinitionOptions<T>): void {
+    this.assertNewToken(token);
     const definition: SyncDefinition<T> = {
-      token,
-      lifetime,
-      provider,
+      token: token,
+      lifetime: Lifetimes.Singleton,
+      provider: provider,
+      async: false,
+      ...(options?.dispose ? { dispose: options.dispose } : {}),
+      ...(options?.eager ? { eager: true } : {}),
+    };
+    this.definitions.set(token, definition);
+  }
+
+  private addSingletonAsync<T>(
+    token: AsyncToken<T>,
+    provider: AsyncProvider<T>,
+    options?: SingletonDefinitionOptions<T>,
+  ): void {
+    this.assertNewToken(token);
+    const definition: AsyncDefinition<T> = {
+      token: token,
+      lifetime: Lifetimes.Singleton,
+      provider: provider,
+      async: true,
+      ...(options?.dispose ? { dispose: options.dispose } : {}),
+      ...(options?.eager ? { eager: true } : {}),
+    };
+    this.definitions.set(token, definition);
+  }
+
+  private add<T>(
+    token: Token<T>,
+    lifetime: NonSingletonLifetime,
+    provider: SyncProvider<T>,
+    options?: DefinitionOptions<T>,
+  ): void {
+    this.assertNewToken(token);
+    const definition: SyncDefinition<T> = {
+      token: token,
+      lifetime: lifetime,
+      provider: provider,
       async: false,
       ...(options?.dispose ? { dispose: options.dispose } : {}),
     };
@@ -65,28 +112,26 @@ export class ModuleBuilder {
 
   private addAsync<T>(
     token: AsyncToken<T>,
-    lifetime: Lifetime,
+    lifetime: NonSingletonLifetime,
     provider: AsyncProvider<T>,
     options?: DefinitionOptions<T>,
   ): void {
-    if (this.definitions.has(token)) {
-      throw new DuplicateDefinitionError(tokenName(token));
-    }
+    this.assertNewToken(token);
     const definition: AsyncDefinition<T> = {
-      token,
-      lifetime,
-      provider,
+      token: token,
+      lifetime: lifetime,
+      provider: provider,
       async: true,
       ...(options?.dispose ? { dispose: options.dispose } : {}),
     };
     this.definitions.set(token, definition);
   }
 
-  single<T>(token: Token<T>, provider: SyncProvider<T>, options?: DefinitionOptions<T>): void {
-    this.add(token, Lifetimes.Singleton, provider, options);
+  single<T>(token: Token<T>, provider: SyncProvider<T>, options?: SingletonDefinitionOptions<T>): void {
+    this.addSingleton(token, provider, options);
   }
-  singleAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>, options?: DefinitionOptions<T>): void {
-    this.addAsync(token, Lifetimes.Singleton, provider, options);
+  singleAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>, options?: SingletonDefinitionOptions<T>): void {
+    this.addSingletonAsync(token, provider, options);
   }
   factory<T>(token: Token<T>, provider: SyncProvider<T>, options?: DefinitionOptions<T>): void {
     this.add(token, Lifetimes.Factory, provider, options);

@@ -211,6 +211,23 @@ export class Container implements ResolutionHost {
     return this.findOwner(token) !== undefined;
   }
 
+  /** Resolves every eager definition loaded on THIS container, in parallel.
+   *  Idempotent (already-cached singletons are untouched); call after load()
+   *  and before serving traffic so construction failures surface at boot. */
+  async start(): Promise<void> {
+    this.assertTreeUsable();
+    const eagerResolutions = [...this.definitions.values()]
+      .filter((definition) => definition.eager)
+      .map((definition) =>
+        definition.async ? this.getAsync(definition.token) : Promise.resolve().then(() => this.get(definition.token)),
+      );
+    const settled = await Promise.allSettled(eagerResolutions);
+    const errors = settled.filter((s) => s.status === "rejected").map((s) => s.reason);
+    if (errors.length > 0) {
+      throw new AggregateError(flattenErrors(errors), "One or more eager definitions failed to start");
+    }
+  }
+
   createScope(): Container {
     this.assertTreeUsable();
     const scope = new Container(this.options);

@@ -140,15 +140,20 @@ async function asyncProviders() {
   const ConnectionToken = createAsyncToken<Connection>("Connection");
 
   const connectionModule = createModule((module) => {
-    module.singleAsync(ConnectionToken, async (resolver: AsyncResolver) => {
-      void resolver; // async providers receive an AsyncResolver — r.get() and r.getAsync() both available
-      await new Promise((res) => setTimeout(res, 10)); // simulate connect()
-      return { ping: () => "pong" };
-    });
+    module.singleAsync(
+      ConnectionToken,
+      async (resolver: AsyncResolver) => {
+        void resolver; // async providers receive an AsyncResolver — r.get() and r.getAsync() both available
+        await new Promise((res) => setTimeout(res, 10)); // simulate connect()
+        return { ping: () => "pong" };
+      },
+      { eager: true }, // constructed by app.start() at boot, not on first request
+    );
   });
 
   const app = new Container();
   app.load(connectionModule);
+  await app.start(); // connect now — failures surface at boot
 
   // Concurrent getAsync of the same singleton runs the provider exactly once.
   const [a, b] = await Promise.all([app.getAsync(ConnectionToken), app.getAsync(ConnectionToken)]);

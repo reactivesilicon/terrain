@@ -241,6 +241,29 @@ module.factoryAsync(AsyncToken, async (resolver) => value);
 module.scopedAsync(AsyncToken, async (resolver) => value);
 ```
 
+## Eager initialization
+
+Resolution is lazy: an instance is constructed the first time its token is resolved. For work that must finish at boot — database connections, cache warmups — mark the singleton `eager` and call `start()` before serving traffic:
+
+```ts
+const dbModule = createModule((module) => {
+  module.singleAsync(DatabaseToken, async () => connect(), {
+    eager: true,
+    dispose: (db) => db.close(),
+  });
+});
+
+container.load(dbModule);
+await container.start(); // constructs all eager singletons, in parallel
+server.listen(3000); // first request hits warm caches
+```
+
+`start()` resolves every eager definition loaded on that container, in parallel, and rejects with an `AggregateError` if any construction fails — failures surface at boot, not on the first request. It is idempotent; already-constructed singletons are untouched, so it is safe to call again after loading more modules.
+
+Because eager construction happens at `start()` rather than at `load()`, the testing story is unaffected: load overrides first, then start.
+
+Only `single` and `singleAsync` accept `eager` — factories cache nothing, and a scoped definition has no scope to construct into at boot. Both misuses are compile-time errors.
+
 ## Sync and async resolvers
 
 Synchronous providers receive a sync resolver:
@@ -546,6 +569,8 @@ await container.unload(module);
 
 container.get(Token);
 await container.getAsync(AsyncToken);
+
+await container.start();
 
 container.has(Token); // accepts Token or AsyncToken
 

@@ -38,6 +38,14 @@ export interface DefinitionOptions<T> {
   dispose?: Disposer<T>;
 }
 
+/** Options for single/singleAsync. Only singletons can be eager: factories
+ *  cache nothing, and "eager scoped" has no scope to construct into. */
+export interface SingletonDefinitionOptions<T> extends DefinitionOptions<T> {
+  /** Construct this instance during container.start() instead of on first
+   *  resolution — for connections and similar work that must finish at boot. */
+  eager?: boolean;
+}
+
 /** Immutable once built (frozen by Module). */
 export type SyncDefinition<T> = Readonly<{
   token: Token<T>;
@@ -45,6 +53,7 @@ export type SyncDefinition<T> = Readonly<{
   async: false;
   provider: SyncProvider<T>;
   dispose?: Disposer<T>;
+  eager?: boolean;
 }>;
 
 export type AsyncDefinition<T> = Readonly<{
@@ -53,6 +62,7 @@ export type AsyncDefinition<T> = Readonly<{
   async: true;
   provider: AsyncProvider<T>;
   dispose?: Disposer<T>;
+  eager?: boolean;
 }>;
 
 export type Definition<T> = SyncDefinition<T> | AsyncDefinition<T>;
