@@ -81,6 +81,15 @@ describe("accessors", () => {
     expect(Object.isFrozen(app)).toBeTruthy();
   });
 
+  it("container.accessors() is equivalent sugar for createAccessors", () => {
+    const T = createSyncToken<number>("fMethod");
+    const c = new Container();
+    c.load(createModule((m) => m.single(T, () => 41)));
+    const app = c.accessors({ answer: T });
+    expect(app.answer()).toBe(41);
+    expect(Object.isFrozen(app)).toBe(true);
+  });
+
   it("accessors types map sync/async members correctly at compile time", () => {
     // Never executed — typecheck:test fails if any of these stops behaving.
     void function compileOnly(f: Accessors<{ db: Token<number>; cfg: AsyncToken<string> }>) {

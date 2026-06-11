@@ -1,3 +1,4 @@
+import { type Accessors, type AccessorSpec, createAccessors } from "../accessors";
 import {
   AsyncProviderError,
   CaptiveDependencyError,
@@ -208,6 +209,12 @@ export class Container implements ResolutionHost {
   has<T>(token: AnyToken<T>): boolean {
     this.assertTreeUsable();
     return this.findOwner(token) !== undefined;
+  }
+
+  /** Named lazy accessors over this container: sync tokens become () => T,
+   *  async tokens () => Promise<T>. Sugar for createAccessors(this, spec). */
+  accessors<S extends AccessorSpec>(spec: S): Accessors<S> {
+    return createAccessors(this, spec);
   }
 
   /** Resolves every eager definition loaded on THIS container, in parallel.

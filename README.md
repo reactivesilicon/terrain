@@ -81,6 +81,7 @@ class UserService {
   }
 }
 
+// Tokens: typed handles, defined once next to the wiring.
 const LoggerToken = createSyncToken<Logger>("Logger");
 const UserServiceToken = createSyncToken<UserService>("UserService");
 
@@ -93,13 +94,19 @@ const appModule = createModule((module) => {
 });
 
 const container = new Container();
-
 container.load(appModule);
 
-const userService = container.get(UserServiceToken);
+// Consumers get named, fully typed accessors — no tokens at call sites.
+const app = container.accessors({
+  logger: LoggerToken,
+  users: UserServiceToken,
+});
 
-userService.createUser("Ada");
+app.users().createUser("Ada");
+app.logger().info("done");
 ```
+
+Tokens stay a wiring detail inside the composition root; the rest of the code calls `app.users()` and gets a typed `UserService`. (Resolving directly also works: `container.get(UserServiceToken)`.)
 
 ## Tokens
 
@@ -129,7 +136,7 @@ builder method) is a compile-time error.
 
 ## Modules
 
-Modules group dependency definitions.
+Modules group dependency definitions. They can only be created through `createModule()` — the type system rejects hand-built look-alikes.
 
 ```ts
 const appModule = createModule((module) => {
@@ -348,12 +355,10 @@ The lazy getter does not cache independently. It always resolves through the con
 
 ## Accessors
 
-Use `createAccessors` to give consumers named accessors instead of tokens. Tokens stay a wiring detail; call sites read like an API.
+Accessors give consumers named, typed entry points instead of tokens. Tokens stay a wiring detail; call sites read like an API. This is the intended way to consume a terrain container.
 
 ```ts
-import { createAccessors } from "terrain-di";
-
-const app = createAccessors(container, {
+const app = container.accessors({
   logger: LoggerToken, // sync token  -> app.logger(): Logger
   db: DatabaseToken, // async token -> app.db(): Promise<Database>
 });
@@ -361,6 +366,8 @@ const app = createAccessors(container, {
 app.logger().info("hello");
 const db = await app.db();
 ```
+
+(`createAccessors(container, spec)` is the equivalent standalone form.)
 
 The return type of each accessor is derived from the token kind: sync tokens produce `() => T`, async tokens produce `() => Promise<T>`.
 
@@ -370,7 +377,7 @@ For per-request work, build the accessors over a scope:
 
 ```ts
 await root.withScope(async (scope) => {
-  const req = createAccessors(scope, { handler: HandlerToken });
+  const req = scope.accessors({ handler: HandlerToken });
   return req.handler().handle(userId);
 });
 ```
@@ -403,7 +410,7 @@ This helps dependents dispose before their dependencies.
 
 Definitions without `{ dispose }` are simply dropped at teardown. Factory instances are caller-owned: their disposer is only used when an in-flight async factory result is orphaned by a concurrent teardown.
 
-Disposal records are keyed by token. If two tokens share one instance (an alias definition returning `resolver.get(Owner)`), each token's disposer runs only when that token is torn down — unloading the alias never destroys the owner's resource. Register resource-destroying cleanup only on the definition that created the resource; an alias's disposer should release just what the alias itself added.
+Each definition's disposer runs only when that definition itself is torn down. If two tokens share one instance (an alias definition returning `resolver.get(Owner)`), unloading the alias runs the alias's disposer but never the owner's — the shared resource survives. Register resource-destroying cleanup only on the definition that created the resource; an alias's disposer should release just what the alias itself added.
 
 If multiple disposals fail, the container throws an `AggregateError`.
 
@@ -566,14 +573,6 @@ try {
 
 Provider-thrown errors are wrapped in `ProviderExecutionError`, unless they are already framework errors.
 
-## Module branding
-
-`Module` is branded at the TypeScript type level.
-
-This prevents ordinary object literals from satisfying the `Module` interface and bypassing builder validation.
-
-This is compile-time protection, not runtime security. Code using `as any` can still bypass TypeScript. Use `createModule()` and `ModuleBuilder` as the supported construction API.
-
 ## API
 
 ### Tokens
@@ -630,6 +629,8 @@ await container.start(); // construct eager singletons, in parallel
 container.inject(token); // () => T, lazy
 container.injectAsync(asyncToken); // () => Promise<T>, lazy
 
+container.accessors(spec); // named lazy accessors (see createAccessors)
+
 container.createScope(); // child Container
 await container.withScope(async (scope) => result); // auto-disposed; returns result
 
@@ -642,7 +643,7 @@ await container.dispose(); // reverse-order teardown, cascades to scopes; idempo
 function createAccessors<S extends Record<string, AnyToken<unknown>>>(container: Container, spec: S): Accessors<S>;
 ```
 
-Maps a name → token spec to typed lazy accessors: sync tokens become `() => T`, async tokens `() => Promise<T>`.
+Maps a name → token spec to typed lazy accessors: sync tokens become `() => T`, async tokens `() => Promise<T>`. `container.accessors(spec)` is the same operation as a method.
 
 ## License
 

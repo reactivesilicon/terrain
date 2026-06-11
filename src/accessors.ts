@@ -17,6 +17,7 @@ export type Accessors<S extends AccessorSpec> = {
 /**
  * Builds named accessors over a container so call sites need no tokens:
  * createAccessors(c, { db: DbToken }) gives accessors.db() instead of c.get(DbToken).
+ * Also available as container.accessors(spec).
  *
  * Accessors are lazy — each call resolves through the container, honoring the
  * definition's lifetime. The spec's tokens need not be loaded until the first
