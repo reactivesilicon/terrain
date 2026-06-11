@@ -1,3 +1,5 @@
+import { describe, expect, it } from "vitest";
+
 import { Container, createModule, createAsyncToken, createSyncToken } from "../../src";
 import {
   DefinitionInUseError,
@@ -6,36 +8,34 @@ import {
   LifecycleOperationError,
   ModuleOwnershipError,
 } from "../../src";
-import { suite, assert, assertEqual, assertThrows, isInstance, ignore, delay } from "../harness";
+import { delay, ignore } from "../helpers";
 
-suite("lifecycle: load", (test) => {
-  test("duplicate definition is rejected without override", async () => {
+describe("lifecycle: load", () => {
+  it("duplicate definition is rejected without override", async () => {
     const T = createSyncToken<number>("dup");
     const c = new Container();
     c.load(createModule((m) => m.single(T, () => 1)));
-    await assertThrows(() => c.load(createModule((m) => m.single(T, () => 2))), isInstance(DuplicateDefinitionError));
+    expect(() => c.load(createModule((m) => m.single(T, () => 2)))).toThrowError(DuplicateDefinitionError);
   });
 
-  test("load is transactional: a failing entry applies nothing", async () => {
+  it("load is transactional: a failing entry applies nothing", async () => {
     const A = createSyncToken<number>("txA");
     const B = createSyncToken<number>("txB");
     const c = new Container();
     c.load(createModule((m) => m.single(B, () => 99))); // B already present
-    await assertThrows(
-      () =>
-        c.load(
-          createModule((m) => {
-            m.single(A, () => 1);
-            m.single(B, () => 2); // duplicate -> whole load must abort
-          }),
-        ),
-      isInstance(DuplicateDefinitionError),
-    );
-    assertEqual(c.has(A), false, "A must not have been partially registered");
-    assertEqual(c.get(B), 99, "existing B must be untouched");
+    expect(() =>
+      c.load(
+        createModule((m) => {
+          m.single(A, () => 1);
+          m.single(B, () => 2); // duplicate -> whole load must abort
+        }),
+      ),
+    ).toThrowError(DuplicateDefinitionError);
+    expect(c.has(A), "A must not have been partially registered").toBe(false);
+    expect(c.get(B), "existing B must be untouched").toBe(99);
   });
 
-  test("override before use replaces the definition", () => {
+  it("override before use replaces the definition", () => {
     const T = createSyncToken<number>("ovOk");
     const c = new Container();
     c.load(createModule((m) => m.single(T, () => 1)));
@@ -43,25 +43,23 @@ suite("lifecycle: load", (test) => {
       createModule((m) => m.single(T, () => 2)),
       { override: true },
     );
-    assertEqual(c.get(T), 2);
+    expect(c.get(T)).toBe(2);
   });
 
-  test("override of an in-use token is rejected", async () => {
+  it("override of an in-use token is rejected", async () => {
     const T = createSyncToken<number>("ovUsed");
     const c = new Container();
     c.load(createModule((m) => m.single(T, () => 1)));
     c.get(T);
-    await assertThrows(
-      () =>
-        c.load(
-          createModule((m) => m.single(T, () => 2)),
-          { override: true },
-        ),
-      isInstance(DefinitionInUseError),
-    );
+    expect(() =>
+      c.load(
+        createModule((m) => m.single(T, () => 2)),
+        { override: true },
+      ),
+    ).toThrowError(DefinitionInUseError);
   });
 
-  test("override blocked by an in-flight async factory", async () => {
+  it("override blocked by an in-flight async factory", async () => {
     const T = createAsyncToken<number>("ovFactory");
     const c = new Container();
     c.load(
@@ -74,20 +72,18 @@ suite("lifecycle: load", (test) => {
     );
     const p = ignore(c.getAsync(T));
     await delay(5);
-    await assertThrows(
-      () =>
-        c.load(
-          createModule((m) => m.factoryAsync(T, async () => 2)),
-          { override: true },
-        ),
-      isInstance(DefinitionInUseError),
-    );
+    expect(() =>
+      c.load(
+        createModule((m) => m.factoryAsync(T, async () => 2)),
+        { override: true },
+      ),
+    ).toThrowError(DefinitionInUseError);
     await p;
   });
 });
 
-suite("lifecycle: unload", (test) => {
-  test("unload removes definitions and disposes instances", async () => {
+describe("lifecycle: unload", () => {
+  it("unload removes definitions and disposes instances", async () => {
     const T = createSyncToken<{ dispose(): void }>("ul");
     let disposed = 0;
     const mod = createModule((m) =>
@@ -97,20 +93,20 @@ suite("lifecycle: unload", (test) => {
     c.load(mod);
     c.get(T);
     await c.unload(mod);
-    assertEqual(disposed, 1);
-    assertEqual(c.has(T), false);
+    expect(disposed).toBe(1);
+    expect(c.has(T)).toBe(false);
   });
 
-  test("unload rejects a module not owned by the container", async () => {
+  it("unload rejects a module not owned by the container", async () => {
     const T = createSyncToken<number>("ulOwn");
     const mod = createModule((m) => m.single(T, () => 1));
     const root = new Container();
     root.load(mod);
     const scope = root.createScope();
-    await assertThrows(() => scope.unload(mod), isInstance(ModuleOwnershipError));
+    await expect(scope.unload(mod)).rejects.toThrowError(ModuleOwnershipError);
   });
 
-  test("unload disposes a scoped instance cached in a child scope", async () => {
+  it("unload disposes a scoped instance cached in a child scope", async () => {
     const T = createSyncToken<{ dispose(): void }>("ulChild");
     let disposed = 0;
     const mod = createModule((m) =>
@@ -121,10 +117,10 @@ suite("lifecycle: unload", (test) => {
     const scope = root.createScope();
     scope.get(T);
     await root.unload(mod);
-    assertEqual(disposed, 1);
+    expect(disposed).toBe(1);
   });
 
-  test("unload disposes in reverse creation order", async () => {
+  it("unload disposes in reverse creation order", async () => {
     const Db = createSyncToken<{ dispose(): void }>("ulDb");
     const Repo = createSyncToken<{ dispose(): void }>("ulRepo");
     const order: string[] = [];
@@ -143,10 +139,10 @@ suite("lifecycle: unload", (test) => {
     c.load(mod);
     c.get(Repo);
     await c.unload(mod);
-    assertEqual(order.join(","), "repo,db");
+    expect(order.join(",")).toBe("repo,db");
   });
 
-  test("unload surfaces disposal failures via AggregateError but still cleans up", async () => {
+  it("unload surfaces disposal failures via AggregateError but still cleans up", async () => {
     const T = createSyncToken<{ dispose(): void }>("ulFail");
     const mod = createModule((m) =>
       m.single(
@@ -168,11 +164,11 @@ suite("lifecycle: unload", (test) => {
     } catch (e) {
       threw = e instanceof AggregateError;
     }
-    assert(threw, "expected AggregateError");
-    assertEqual(c.has(T), false, "definition must still be removed");
+    expect(threw, "expected AggregateError").toBeTruthy();
+    expect(c.has(T), "definition must still be removed").toBe(false);
   });
 
-  test("a token mid-unload cannot be re-resolved by an in-flight provider", async () => {
+  it("a token mid-unload cannot be re-resolved by an in-flight provider", async () => {
     // A (in module modA) depends on B (in module modB). While A's async provider
     // is parked, we unload ONLY modB. A then resumes and tries to resolve B; the
     // unload gate must make that fail rather than rebuild/re-cache B. A itself is
@@ -207,14 +203,14 @@ suite("lifecycle: unload", (test) => {
     await delay(5);
     await c.unload(modB); // unload B while A is parked
     const a = await pa; // A completes (it caught the failed B resolution)
-    assert(bResolveError !== null, "A's resolution of B during unload must have failed");
-    assertEqual(a.b, null);
-    assertEqual(bBuilds, buildsAfterPrime, "B must not be rebuilt during unload");
+    expect(bResolveError !== null, "A's resolution of B during unload must have failed").toBeTruthy();
+    expect(a.b).toBe(null);
+    expect(bBuilds, "B must not be rebuilt during unload").toBe(buildsAfterPrime);
   });
 });
 
-suite("lifecycle: tree-wide locking", (test) => {
-  test("concurrent load during in-progress unload is rejected", async () => {
+describe("lifecycle: tree-wide locking", () => {
+  it("concurrent load during in-progress unload is rejected", async () => {
     const T = createAsyncToken<number>("lkT");
     const mod = createModule((m) =>
       m.singleAsync(T, async () => {
@@ -226,14 +222,13 @@ suite("lifecycle: tree-wide locking", (test) => {
     c.load(mod);
     await c.getAsync(T);
     const u = ignore(c.unload(mod));
-    await assertThrows(
-      () => c.load(createModule((m) => m.single(createSyncToken<number>("lkOther"), () => 2))),
-      isInstance(LifecycleOperationError),
+    expect(() => c.load(createModule((m) => m.single(createSyncToken<number>("lkOther"), () => 2)))).toThrowError(
+      LifecycleOperationError,
     );
     await u;
   });
 
-  test("child load is blocked while a root unload runs (tree-wide)", async () => {
+  it("child load is blocked while a root unload runs (tree-wide)", async () => {
     const T = createAsyncToken<number>("lkRoot");
     const mod = createModule((m) =>
       m.singleAsync(T, async () => {
@@ -246,14 +241,13 @@ suite("lifecycle: tree-wide locking", (test) => {
     root.load(mod);
     await root.getAsync(T);
     const u = ignore(root.unload(mod));
-    await assertThrows(
-      () => child.load(createModule((m) => m.single(createSyncToken<number>("lkChild"), () => 2))),
-      isInstance(LifecycleOperationError),
+    expect(() => child.load(createModule((m) => m.single(createSyncToken<number>("lkChild"), () => 2)))).toThrowError(
+      LifecycleOperationError,
     );
     await u;
   });
 
-  test("dispose during an in-progress unload is rejected", async () => {
+  it("dispose during an in-progress unload is rejected", async () => {
     const T = createAsyncToken<number>("lkDisp");
     const mod = createModule((m) =>
       m.singleAsync(T, async () => {
@@ -265,11 +259,11 @@ suite("lifecycle: tree-wide locking", (test) => {
     c.load(mod);
     await c.getAsync(T);
     const u = ignore(c.unload(mod));
-    await assertThrows(() => c.dispose(), isInstance(LifecycleOperationError));
+    await expect(c.dispose()).rejects.toThrowError(LifecycleOperationError);
     await u;
   });
 
-  test("ownership: a parent disposing while a child unloads does not orphan the child", async () => {
+  it("ownership: a parent disposing while a child unloads does not orphan the child", async () => {
     const CT = createAsyncToken<{ dispose(): void }>("ownChild");
     const cm = createModule((m) =>
       m.singleAsync(
@@ -292,12 +286,9 @@ suite("lifecycle: tree-wide locking", (test) => {
       .then(() => "ok")
       .catch((e) => (e instanceof LifecycleOperationError ? "rejected" : "other"));
     await unloading;
-    assertEqual(outcome, "rejected");
+    expect(outcome).toBe("rejected");
     // Once the unload finishes, the tree can be disposed cleanly.
     await root.dispose();
-    await assertThrows(
-      () => child.getAsync(CT),
-      (e) => e instanceof DisposedContainerError || e instanceof Error,
-    );
+    await expect(child.getAsync(CT)).rejects.toThrowError(DisposedContainerError);
   });
 });

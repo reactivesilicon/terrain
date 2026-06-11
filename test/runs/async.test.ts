@@ -1,9 +1,11 @@
+import { describe, expect, it } from "vitest";
+
 import { Container, createModule, createAsyncToken } from "../../src";
 import { AsyncProviderError, type Token } from "../../src";
-import { suite, assert, assertEqual, assertThrows, isInstance, delay } from "../harness";
+import { delay } from "../helpers";
 
-suite("async", (test) => {
-  test("async singleton resolves once under concurrency", async () => {
+describe("async", () => {
+  it("async singleton resolves once under concurrency", async () => {
     const T = createAsyncToken<{ n: number }>("aSingle");
     let builds = 0;
     const c = new Container();
@@ -17,11 +19,11 @@ suite("async", (test) => {
       ),
     );
     const [a, b, d] = await Promise.all([c.getAsync(T), c.getAsync(T), c.getAsync(T)]);
-    assertEqual(builds, 1, "provider must run exactly once");
-    assert(a === b && b === d, "all callers receive the same instance");
+    expect(builds, "provider must run exactly once").toBe(1);
+    expect(a === b && b === d, "all callers receive the same instance").toBeTruthy();
   });
 
-  test("async scoped resolves once per scope under concurrency", async () => {
+  it("async scoped resolves once per scope under concurrency", async () => {
     const T = createAsyncToken<object>("aScoped");
     let builds = 0;
     const root = new Container();
@@ -36,20 +38,20 @@ suite("async", (test) => {
     );
     const scope = root.createScope();
     await Promise.all([scope.getAsync(T), scope.getAsync(T), scope.getAsync(T)]);
-    assertEqual(builds, 1);
+    expect(builds).toBe(1);
   });
 
-  test("async factory produces a fresh instance every call", async () => {
+  it("async factory produces a fresh instance every call", async () => {
     const T = createAsyncToken<number>("aFactory");
     let n = 0;
     const c = new Container();
     c.load(createModule((m) => m.factoryAsync(T, async () => (n += 1))));
     const [a, b] = await Promise.all([c.getAsync(T), c.getAsync(T)]);
-    assertEqual(n, 2);
+    expect(n).toBe(2);
     assertNotSame(a, b);
   });
 
-  test("sync get() of an async provider throws before any side effect", async () => {
+  it("sync get() of an async provider throws before any side effect", async () => {
     const T = createAsyncToken<number>("aMisuse");
     let started = false;
     const c = new Container();
@@ -63,11 +65,11 @@ suite("async", (test) => {
     );
     // The token brand makes this a compile error now; cast to exercise the
     // runtime backstop that still protects untyped/JS callers.
-    await assertThrows(() => c.get(T as unknown as Token<number>), isInstance(AsyncProviderError));
-    assertEqual(started, false, "provider must not start when sync get() is misused");
+    expect(() => c.get(T as unknown as Token<number>)).toThrowError(AsyncProviderError);
+    expect(started, "provider must not start when sync get() is misused").toBe(false);
   });
 
-  test("async provider rejection does not poison the singleton cache", async () => {
+  it("async provider rejection does not poison the singleton cache", async () => {
     const T = createAsyncToken<string>("aPoison");
     let attempt = 0;
     const c = new Container();
@@ -86,11 +88,11 @@ suite("async", (test) => {
       /* expected */
     }
     const value = await c.getAsync(T);
-    assertEqual(value, "ok");
-    assertEqual(attempt, 2, "a failed resolution must be retryable");
+    expect(value).toBe("ok");
+    expect(attempt, "a failed resolution must be retryable").toBe(2);
   });
 });
 
 function assertNotSame<T>(a: T, b: T): void {
-  assert(a !== b, "expected distinct instances");
+  expect(a !== b, "expected distinct instances").toBeTruthy();
 }

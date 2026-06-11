@@ -34,22 +34,23 @@
     "dev": "tsdown --watch",
     "typecheck": "tsc -p tsconfig.json",
     "typecheck:test": "tsc -p tsconfig.test.json",
-    "test": "tsx test/run.ts",
+    "test": "vitest run",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt --check",
     "format:fix": "oxfmt",
     "quality": "bun run lint && bun run format && bun run typecheck && bun run typecheck:test && bun run test",
     "quality:fix": "bun run lint:fix && bun run format:fix && bun run typecheck && bun run typecheck:test && bun run test",
-    "prepublishOnly": "bun run quality && bun run build"
+    "prepublishOnly": "bun run quality && bun run build",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^24.12.4",
     "oxfmt": "^0.52.0",
     "oxlint": "^1.67.0",
     "tsdown": "^0.22.1",
-    "tsx": "^4.22.3",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
   },
   "engines": {
     "node": ">=20"

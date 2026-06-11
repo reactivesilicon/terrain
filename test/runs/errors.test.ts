@@ -1,3 +1,5 @@
+import { describe, expect, it } from "vitest";
+
 import { Container, createAsyncToken, createModule, createSyncToken, isAsyncToken } from "../../src";
 import {
   type AsyncResolver,
@@ -12,16 +14,15 @@ import {
   SyncProviderError,
   type SyncResolver,
 } from "../../src";
-import { suite, assert, assertEqual, assertThrows, isInstance } from "../harness";
 
-suite("errors: guardrails", (test) => {
-  test("missing dependency throws MissingDependencyError", async () => {
+describe("errors: guardrails", () => {
+  it("missing dependency throws MissingDependencyError", async () => {
     const T = createSyncToken<number>("missing");
     const c = new Container();
-    await assertThrows(() => c.get(T), isInstance(MissingDependencyError));
+    expect(() => c.get(T)).toThrowError(MissingDependencyError);
   });
 
-  test("direct circular dependency is detected", async () => {
+  it("direct circular dependency is detected", async () => {
     const A = createSyncToken<unknown>("cA");
     const B = createSyncToken<unknown>("cB");
     const c = new Container();
@@ -31,10 +32,10 @@ suite("errors: guardrails", (test) => {
         m.single(B, (r) => ({ a: r.get(A) }));
       }),
     );
-    await assertThrows(() => c.get(A), isInstance(CircularDependencyError));
+    expect(() => c.get(A)).toThrowError(CircularDependencyError);
   });
 
-  test("deep circular dependency is detected", async () => {
+  it("deep circular dependency is detected", async () => {
     const A = createSyncToken<unknown>("dcA");
     const B = createSyncToken<unknown>("dcB");
     const D = createSyncToken<unknown>("dcC");
@@ -46,10 +47,10 @@ suite("errors: guardrails", (test) => {
         m.single(D, (r) => r.get(A));
       }),
     );
-    await assertThrows(() => c.get(A), isInstance(CircularDependencyError));
+    expect(() => c.get(A)).toThrowError(CircularDependencyError);
   });
 
-  test("singleton depending on scoped throws CaptiveDependencyError", async () => {
+  it("singleton depending on scoped throws CaptiveDependencyError", async () => {
     const Svc = createSyncToken<unknown>("capSvc");
     const Ctx = createSyncToken<unknown>("capCtx");
     const c = new Container();
@@ -59,10 +60,10 @@ suite("errors: guardrails", (test) => {
         m.scoped(Ctx, () => ({}));
       }),
     );
-    await assertThrows(() => c.get(Svc), isInstance(CaptiveDependencyError));
+    expect(() => c.get(Svc)).toThrowError(CaptiveDependencyError);
   });
 
-  test("transitive singleton -> factory -> scoped is captive", async () => {
+  it("transitive singleton -> factory -> scoped is captive", async () => {
     const Svc = createSyncToken<unknown>("tcapSvc");
     const Fac = createSyncToken<unknown>("tcapFac");
     const Ctx = createSyncToken<unknown>("tcapCtx");
@@ -74,10 +75,10 @@ suite("errors: guardrails", (test) => {
         m.scoped(Ctx, () => ({}));
       }),
     );
-    await assertThrows(() => c.get(Svc), isInstance(CaptiveDependencyError));
+    expect(() => c.get(Svc)).toThrowError(CaptiveDependencyError);
   });
 
-  test("factory -> scoped (no singleton ancestor) is allowed", () => {
+  it("factory -> scoped (no singleton ancestor) is allowed", () => {
     const Fac = createSyncToken<{ c: unknown }>("okFac");
     const Ctx = createSyncToken<unknown>("okCtx");
     const root = new Container();
@@ -88,29 +89,26 @@ suite("errors: guardrails", (test) => {
       }),
     );
     const scope = root.createScope();
-    assert(scope.get(Fac).c !== undefined);
+    expect(scope.get(Fac).c !== undefined).toBeTruthy();
   });
 
-  test("child cannot shadow an ancestor token", async () => {
+  it("child cannot shadow an ancestor token", async () => {
     const T = createSyncToken<number>("shUp");
     const root = new Container();
     root.load(createModule((m) => m.single(T, () => 1)));
     const child = root.createScope();
-    await assertThrows(
-      () => child.load(createModule((m) => m.single(T, () => 2))),
-      isInstance(ShadowedDefinitionError),
-    );
+    expect(() => child.load(createModule((m) => m.single(T, () => 2)))).toThrowError(ShadowedDefinitionError);
   });
 
-  test("ancestor cannot define a token already in a descendant", async () => {
+  it("ancestor cannot define a token already in a descendant", async () => {
     const T = createSyncToken<number>("shDown");
     const root = new Container();
     const child = root.createScope();
     child.load(createModule((m) => m.single(T, () => 1)));
-    await assertThrows(() => root.load(createModule((m) => m.single(T, () => 2))), isInstance(ShadowedDefinitionError));
+    expect(() => root.load(createModule((m) => m.single(T, () => 2)))).toThrowError(ShadowedDefinitionError);
   });
 
-  test("provider construction error is wrapped with token context", async () => {
+  it("provider construction error is wrapped with token context", async () => {
     const T = createSyncToken<number>("wrap");
     const c = new Container();
     c.load(
@@ -126,41 +124,41 @@ suite("errors: guardrails", (test) => {
     } catch (e) {
       err = e;
     }
-    assert(err instanceof ProviderExecutionError, "expected ProviderExecutionError");
-    assert(
+    expect(err instanceof ProviderExecutionError, "expected ProviderExecutionError").toBeTruthy();
+    expect(
       (err as ProviderExecutionError).cause instanceof Error &&
         ((err as ProviderExecutionError).cause as Error).message === "inner",
       "original cause must be preserved",
-    );
+    ).toBeTruthy();
   });
 
-  test("framework errors are not re-wrapped as provider errors", async () => {
+  it("framework errors are not re-wrapped as provider errors", async () => {
     const A = createSyncToken<unknown>("nwA");
     const Missing = createSyncToken<unknown>("nwMissing");
     const c = new Container();
     c.load(createModule((m) => m.single(A, (r) => r.get(Missing))));
-    await assertThrows(() => c.get(A), isInstance(MissingDependencyError));
+    expect(() => c.get(A)).toThrowError(MissingDependencyError);
   });
 
-  test("a child cannot resolve through a disposed ancestor", async () => {
+  it("a child cannot resolve through a disposed ancestor", async () => {
     const T = createSyncToken<number>("discAnc");
     const root = new Container();
     root.load(createModule((m) => m.single(T, () => 5)));
     const child = root.createScope();
     await root.dispose();
-    await assertThrows(() => child.get(T), isInstance(DisposedContainerError));
+    expect(() => child.get(T)).toThrowError(DisposedContainerError);
   });
 
-  test("getAsync() of a sync provider throws SyncProviderError (runtime backstop)", async () => {
+  it("getAsync() of a sync provider throws SyncProviderError (runtime backstop)", async () => {
     const T = createSyncToken<number>("sMisuse");
     const c = new Container();
     c.load(createModule((m) => m.single(T, () => 1)));
     // The token brand makes this a compile error now; cast to exercise the
     // runtime backstop that still protects untyped/JS callers.
-    await assertThrows(() => c.getAsync(T as unknown as AsyncToken<number>), isInstance(SyncProviderError));
+    await expect(c.getAsync(T as unknown as AsyncToken<number>)).rejects.toThrowError(SyncProviderError);
   });
 
-  test("token brands reject sync/async misuse at compile time", () => {
+  it("token brands reject sync/async misuse at compile time", () => {
     const S = createSyncToken<number>("brandSync");
     const A = createAsyncToken<number>("brandAsync");
     // Never executed — typecheck:test fails if any of these stops being an error.
@@ -201,15 +199,15 @@ suite("errors: guardrails", (test) => {
     };
     // has() accepts both kinds — must compile without error.
     const c = new Container();
-    assertEqual(c.has(S), false);
-    assertEqual(c.has(A), false);
+    expect(c.has(S)).toBe(false);
+    expect(c.has(A)).toBe(false);
     // The mode discriminant is real at runtime, not just a type-level brand.
-    assertEqual(isAsyncToken(S), false);
-    assertEqual(isAsyncToken(A), true);
-    assertEqual(S.description, "brandSync");
+    expect(isAsyncToken(S)).toBe(false);
+    expect(isAsyncToken(A)).toBe(true);
+    expect(S.description).toBe("brandSync");
   });
 
-  test("all framework errors extend DIError", () => {
+  it("all framework errors extend DIError", () => {
     const errs: Error[] = [
       new MissingDependencyError("x"),
       new CircularDependencyError(["a", "b"]),
@@ -218,7 +216,7 @@ suite("errors: guardrails", (test) => {
       new ProviderExecutionError("x", new Error()),
       new DisposedContainerError(),
     ];
-    assert(errs.every((e) => e instanceof DIError));
-    assertEqual(new Error("plain") instanceof DIError, false);
+    expect(errs.every((e) => e instanceof DIError)).toBeTruthy();
+    expect(new Error("plain") instanceof DIError).toBe(false);
   });
 });

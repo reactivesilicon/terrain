@@ -1,9 +1,11 @@
+import { describe, expect, it } from "vitest";
+
 import { Container, createModule, createAsyncToken, createSyncToken } from "../../src";
 import { DisposedContainerError } from "../../src";
-import { suite, assert, assertEqual, assertThrows, isInstance, ignore, delay } from "../harness";
+import { delay, ignore, random } from "../helpers";
 
-suite("concurrency", (test) => {
-  test("in-flight async singleton rejects and is disposed after dispose()", async () => {
+describe("concurrency", () => {
+  it("in-flight async singleton rejects and is disposed after dispose()", async () => {
     const T = createAsyncToken<{ dispose(): void }>("ifSingle");
     let disposed = false;
     const c = new Container();
@@ -22,11 +24,11 @@ suite("concurrency", (test) => {
     const p = ignore(c.getAsync(T));
     await delay(5);
     await c.dispose();
-    await assertThrows(() => p, isInstance(DisposedContainerError));
-    assertEqual(disposed, true, "orphaned in-flight instance must be disposed");
+    await expect(p).rejects.toThrowError(DisposedContainerError);
+    expect(disposed, "orphaned in-flight instance must be disposed").toBe(true);
   });
 
-  test("in-flight async factory is orphaned on unload", async () => {
+  it("in-flight async factory is orphaned on unload", async () => {
     const T = createAsyncToken<{ dispose(): void }>("ifFactory");
     let disposed = false;
     const mod = createModule((m) =>
@@ -44,11 +46,11 @@ suite("concurrency", (test) => {
     const p = ignore(c.getAsync(T));
     await delay(5);
     await c.unload(mod);
-    await assertThrows(() => p, isInstance(DisposedContainerError));
-    assertEqual(disposed, true);
+    await expect(p).rejects.toThrowError(DisposedContainerError);
+    expect(disposed).toBe(true);
   });
 
-  test("child-local resolution is blocked while a parent is disposing", async () => {
+  it("child-local resolution is blocked while a parent is disposing", async () => {
     const Slow = createSyncToken<{ dispose(): Promise<void> }>("clSlow");
     const Local = createSyncToken<object>("clLocal");
     let localBuilt = 0;
@@ -80,12 +82,12 @@ suite("concurrency", (test) => {
     const disposing = ignore(root.dispose());
     // root.disposed is now true; childB not yet marked. Resolving its own local
     // token must still be rejected because an ancestor is disposed.
-    await assertThrows(() => childB.get(Local), isInstance(DisposedContainerError));
+    expect(() => childB.get(Local)).toThrowError(DisposedContainerError);
     await disposing;
-    assertEqual(localBuilt, 0, "child-local instance must not be built during parent dispose");
+    expect(localBuilt, "child-local instance must not be built during parent dispose").toBe(0);
   });
 
-  test("pending child async settling after parent dispose is orphaned", async () => {
+  it("pending child async settling after parent dispose is orphaned", async () => {
     const T = createAsyncToken<{ dispose(): void }>("pendChild");
     let disposed = false;
     const root = new Container();
@@ -105,11 +107,11 @@ suite("concurrency", (test) => {
     const p = ignore(child.getAsync(T));
     await delay(5);
     await root.dispose();
-    await assertThrows(() => p, isInstance(DisposedContainerError));
-    assertEqual(disposed, true);
+    await expect(p).rejects.toThrowError(DisposedContainerError);
+    expect(disposed).toBe(true);
   });
 
-  test("randomized race: parent dispose vs child unload never double-disposes or orphans", async () => {
+  it("randomized race: parent dispose vs child unload never double-disposes or orphans", async () => {
     const trials = 200;
     let doubles = 0;
     let orphansAlive = 0;
@@ -124,7 +126,7 @@ suite("concurrency", (test) => {
         m.scopedAsync(
           T,
           async () => {
-            await delay(Math.random() * 4);
+            await delay(random() * 4);
             return { dispose: () => (n += 1) };
           },
           { dispose: (x) => x.dispose() },
@@ -132,7 +134,7 @@ suite("concurrency", (test) => {
       );
       child.load(mod);
       const p = ignore(child.getAsync(T));
-      await delay(Math.random() * 3);
+      await delay(random() * 3);
       const a = ignore(child.unload(mod));
       const b = ignore(root.dispose());
       await Promise.allSettled([p, a, b]);
@@ -149,12 +151,12 @@ suite("concurrency", (test) => {
       }
     }
 
-    assertEqual(doubles, 0, "no instance may be disposed more than once");
-    assertEqual(orphansAlive, 0, "no child may remain usable after teardown");
-    assert(built > 0, "the race window must have actually built instances");
+    expect(doubles, "no instance may be disposed more than once").toBe(0);
+    expect(orphansAlive, "no child may remain usable after teardown").toBe(0);
+    expect(built > 0, "the race window must have actually built instances").toBeTruthy();
   });
 
-  test("deep scope chain resolves and per-resolve ancestor walk stays cheap", () => {
+  it("deep scope chain resolves and per-resolve ancestor walk stays cheap", () => {
     const Root = createSyncToken<number>("deepRoot");
     const Leaf = createSyncToken<{ n: number }>("deepLeaf");
     const root = new Container();
@@ -162,7 +164,7 @@ suite("concurrency", (test) => {
     let c: Container = root;
     for (let i = 0; i < 25; i++) c = c.createScope();
     c.load(createModule((m) => m.scoped(Leaf, (r) => ({ n: r.get(Root) }))));
-    assertEqual(c.get(Leaf).n, 42);
-    assert(c.get(Leaf) === c.get(Leaf), "leaf scoped is cached within its scope");
+    expect(c.get(Leaf).n).toBe(42);
+    expect(c.get(Leaf) === c.get(Leaf), "leaf scoped is cached within its scope").toBeTruthy();
   });
 });

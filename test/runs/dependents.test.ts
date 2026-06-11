@@ -1,9 +1,11 @@
+import { describe, expect, it } from "vitest";
+
 import { Container, createAsyncToken, createModule, createSyncToken } from "../../src";
 import { DependentInstanceError, MissingDependencyError, type SyncResolver } from "../../src";
-import { suite, assert, assertEqual, assertThrows, isInstance, delay, ignore } from "../harness";
+import { delay, ignore } from "../helpers";
 
-suite("unload safety: dependents", (test) => {
-  test("unload is refused while a live singleton depends on the module", async () => {
+describe("unload safety: dependents", () => {
+  it("unload is refused while a live singleton depends on the module", async () => {
     const A = createSyncToken<{ v: number }>("depA");
     const B = createSyncToken<{ a: { v: number } }>("depB");
     const modA = createModule((m) => m.single(A, () => ({ v: 1 })));
@@ -12,16 +14,16 @@ suite("unload safety: dependents", (test) => {
     c.load(modA);
     c.load(modB);
     c.get(B); // B captures A's instance
-    await assertThrows(() => c.unload(modA), isInstance(DependentInstanceError));
+    await expect(c.unload(modA)).rejects.toThrowError(DependentInstanceError);
     // Transactional: nothing was evicted or disposed.
-    assertEqual(c.get(A).v, 1);
-    assertEqual(c.get(B).a.v, 1);
+    expect(c.get(A).v).toBe(1);
+    expect(c.get(B).a.v).toBe(1);
     // Unloading the dependent first unblocks the dependency.
     await c.unload(modB);
     await c.unload(modA);
   });
 
-  test("capture through a factory attributes to the caching dependent", async () => {
+  it("capture through a factory attributes to the caching dependent", async () => {
     const A = createSyncToken<object>("tfA");
     const F = createSyncToken<{ a: object }>("tfF");
     const C = createSyncToken<{ f: { a: object } }>("tfC");
@@ -34,15 +36,17 @@ suite("unload safety: dependents", (test) => {
     c.load(modA);
     c.load(rest);
     c.get(C); // C -> factory F -> A; the live holder is C
-    await assertThrows(
-      () => c.unload(modA),
-      (e) => e instanceof DependentInstanceError && e.message.includes("tfC"),
+    const refusal = await c.unload(modA).then(
+      () => null,
+      (e: unknown) => e,
     );
+    expect(refusal).toBeInstanceOf(DependentInstanceError);
+    expect((refusal as Error).message).toContain("tfC");
     await c.unload(rest);
     await c.unload(modA);
   });
 
-  test("transient use during construction still blocks (conservative by design)", async () => {
+  it("transient use during construction still blocks (conservative by design)", async () => {
     const Cfg = createSyncToken<{ url: string }>("transCfg");
     const Svc = createSyncToken<{ url: string }>("transSvc");
     const cfgMod = createModule((m) => m.single(Cfg, () => ({ url: "db://x" })));
@@ -55,10 +59,10 @@ suite("unload safety: dependents", (test) => {
     c.load(cfgMod);
     c.load(svcMod);
     c.get(Svc);
-    await assertThrows(() => c.unload(cfgMod), isInstance(DependentInstanceError));
+    await expect(c.unload(cfgMod)).rejects.toThrowError(DependentInstanceError);
   });
 
-  test("disposing the scope that holds the dependent unblocks unload", async () => {
+  it("disposing the scope that holds the dependent unblocks unload", async () => {
     const A = createSyncToken<object>("scA");
     const B = createSyncToken<{ a: object }>("scB");
     const modA = createModule((m) => m.single(A, () => ({})));
@@ -68,12 +72,12 @@ suite("unload safety: dependents", (test) => {
     root.load(modB);
     const scope = root.createScope();
     scope.get(B);
-    await assertThrows(() => root.unload(modA), isInstance(DependentInstanceError));
+    await expect(root.unload(modA)).rejects.toThrowError(DependentInstanceError);
     await scope.dispose();
     await root.unload(modA); // no live B instance remains anywhere in the tree
   });
 
-  test("an in-flight async dependent blocks unload", async () => {
+  it("an in-flight async dependent blocks unload", async () => {
     const A = createSyncToken<object>("ifA");
     const B = createAsyncToken<{ a: object }>("ifB");
     const modA = createModule((m) => m.single(A, () => ({})));
@@ -89,13 +93,13 @@ suite("unload safety: dependents", (test) => {
     c.load(modB);
     const pending = ignore(c.getAsync(B));
     await delay(5);
-    await assertThrows(() => c.unload(modA), isInstance(DependentInstanceError));
+    await expect(c.unload(modA)).rejects.toThrowError(DependentInstanceError);
     await pending;
     await c.unload(modB);
     await c.unload(modA);
   });
 
-  test("async dependent via getAsync is tracked like sync", async () => {
+  it("async dependent via getAsync is tracked like sync", async () => {
     const A = createAsyncToken<object>("agA");
     const B = createAsyncToken<{ a: object }>("agB");
     const modA = createModule((m) => m.singleAsync(A, async () => ({})));
@@ -104,12 +108,12 @@ suite("unload safety: dependents", (test) => {
     c.load(modA);
     c.load(modB);
     await c.getAsync(B);
-    await assertThrows(() => c.unload(modA), isInstance(DependentInstanceError));
+    await expect(c.unload(modA)).rejects.toThrowError(DependentInstanceError);
     await c.unload(modB);
     await c.unload(modA);
   });
 
-  test("dependents inside the same module do not block its own unload", async () => {
+  it("dependents inside the same module do not block its own unload", async () => {
     const A = createSyncToken<object>("selfA");
     const B = createSyncToken<{ a: object }>("selfB");
     const mod = createModule((m) => {
@@ -122,7 +126,7 @@ suite("unload safety: dependents", (test) => {
     await c.unload(mod); // A's dependent B is evicted in the same operation
   });
 
-  test("override purges the replaced definition's stale edges", async () => {
+  it("override purges the replaced definition's stale edges", async () => {
     const A = createSyncToken<object>("ovEdgeA");
     const B = createSyncToken<object>("ovEdgeB");
     const modA = createModule((m) => m.single(A, () => ({})));
@@ -141,7 +145,7 @@ suite("unload safety: dependents", (test) => {
     await root.dispose();
   });
 
-  test("a stashed resolver used after construction still records the capture", async () => {
+  it("a stashed resolver used after construction still records the capture", async () => {
     const A = createSyncToken<object>("escA");
     const B = createSyncToken<{ poke(): object }>("escB");
     const modA = createModule((m) => m.single(A, () => ({})));
@@ -150,10 +154,10 @@ suite("unload safety: dependents", (test) => {
     c.load(modA);
     c.load(modB);
     c.get(B).poke(); // late resolution -> edge recorded at the call
-    await assertThrows(() => c.unload(modA), isInstance(DependentInstanceError));
+    await expect(c.unload(modA)).rejects.toThrowError(DependentInstanceError);
   });
 
-  test("a stashed resolver after unload fails loudly instead of resurrecting the token", async () => {
+  it("a stashed resolver after unload fails loudly instead of resurrecting the token", async () => {
     const A = createSyncToken<object>("escPostA");
     const B = createSyncToken<{ poke(): object }>("escPostB");
     const modA = createModule((m) => m.single(A, () => ({})));
@@ -163,10 +167,10 @@ suite("unload safety: dependents", (test) => {
     c.load(modB);
     const b = c.get(B); // A never resolved -> no edge, unload is allowed
     await c.unload(modA);
-    await assertThrows(() => b.poke(), isInstance(MissingDependencyError));
+    expect(() => b.poke()).toThrowError(MissingDependencyError);
   });
 
-  test("edges are tree-local: another tree's captures do not block unload", async () => {
+  it("edges are tree-local: another tree's captures do not block unload", async () => {
     const A = createSyncToken<object>("xtA");
     const B = createSyncToken<{ a: object }>("xtB");
     const modA = createModule((m) => m.single(A, () => ({})));
@@ -179,10 +183,10 @@ suite("unload safety: dependents", (test) => {
     t2.load(modA);
     t2.load(modB);
     await t2.unload(modA); // t2 has no live dependent
-    await assertThrows(() => t1.unload(modA), isInstance(DependentInstanceError));
+    await expect(t1.unload(modA)).rejects.toThrowError(DependentInstanceError);
   });
 
-  test("edges are purged on unload: a reloaded independent dependent does not block", async () => {
+  it("edges are purged on unload: a reloaded independent dependent does not block", async () => {
     const A = createSyncToken<object>("rlA");
     const B = createSyncToken<object>("rlB");
     const modA = createModule((m) => m.single(A, () => ({})));
@@ -196,6 +200,6 @@ suite("unload safety: dependents", (test) => {
     c.load(newB);
     c.get(B);
     await c.unload(modA); // must not be blocked by the stale edge
-    assert(c.has(B), "independent B stays loaded");
+    expect(c.has(B), "independent B stays loaded").toBeTruthy();
   });
 });

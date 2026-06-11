@@ -1,22 +1,23 @@
+import { describe, expect, it } from "vitest";
+
 import { Container, createModule, createSyncToken } from "../../src";
 import { DisposedContainerError } from "../../src";
-import { suite, assert, assertEqual, assertThrows, isInstance } from "../harness";
 
-suite("scopes", (test) => {
-  test("createScope inherits parent definitions", () => {
+describe("scopes", () => {
+  it("createScope inherits parent definitions", () => {
     const T = createSyncToken<number>("inh");
     const root = new Container();
     root.load(createModule((m) => m.single(T, () => 5)));
-    assertEqual(root.createScope().get(T), 5);
+    expect(root.createScope().get(T)).toBe(5);
   });
 
-  test("withScope returns the body result", async () => {
+  it("withScope returns the body result", async () => {
     const root = new Container();
     const result = await root.withScope(async () => 42);
-    assertEqual(result, 42);
+    expect(result).toBe(42);
   });
 
-  test("withScope disposes its scope afterwards", async () => {
+  it("withScope disposes its scope afterwards", async () => {
     const T = createSyncToken<{ dispose(): void }>("ws");
     let disposed = 0;
     const root = new Container();
@@ -26,22 +27,20 @@ suite("scopes", (test) => {
     await root.withScope(async (scope) => {
       scope.get(T);
     });
-    assertEqual(disposed, 1);
+    expect(disposed).toBe(1);
   });
 
-  test("withScope preserves the body error when disposal succeeds", async () => {
+  it("withScope preserves the body error when disposal succeeds", async () => {
     const root = new Container();
     const bodyErr = new Error("body");
-    await assertThrows(
-      () =>
-        root.withScope(async () => {
-          throw bodyErr;
-        }),
-      (e) => e === bodyErr,
-    );
+    await expect(
+      root.withScope(async () => {
+        throw bodyErr;
+      }),
+    ).rejects.toBe(bodyErr);
   });
 
-  test("withScope aggregates body + disposal errors (flattened)", async () => {
+  it("withScope aggregates body + disposal errors (flattened)", async () => {
     const T = createSyncToken<{ dispose(): void }>("wsAgg");
     const root = new Container();
     root.load(
@@ -69,22 +68,22 @@ suite("scopes", (test) => {
     }
     const flatten = (e: unknown): unknown[] => (e instanceof AggregateError ? e.errors.flatMap(flatten) : [e]);
     const leaves = flatten(caught);
-    assert(caught instanceof AggregateError, "expected AggregateError");
-    assert(leaves.includes(bodyErr), "body error must be preserved");
-    assert(
+    expect(caught instanceof AggregateError, "expected AggregateError").toBeTruthy();
+    expect(leaves.includes(bodyErr), "body error must be preserved").toBeTruthy();
+    expect(
       leaves.some((x) => x instanceof Error && x.message === "dispose-failed"),
       "dispose error must be preserved",
-    );
-    assert(
+    ).toBeTruthy();
+    expect(
       leaves.every((x) => !(x instanceof AggregateError)),
       "aggregate must be flattened",
-    );
+    ).toBeTruthy();
   });
 
-  test("createScope throws when an ancestor is disposed", async () => {
+  it("createScope throws when an ancestor is disposed", async () => {
     const root = new Container();
     const child = root.createScope();
     await root.dispose();
-    await assertThrows(() => child.createScope(), isInstance(DisposedContainerError));
+    expect(() => child.createScope()).toThrowError(DisposedContainerError);
   });
 });
