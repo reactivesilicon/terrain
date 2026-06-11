@@ -13,17 +13,15 @@ import {
 } from "./types";
 import { tokenName } from "./utils";
 
-// The shared add/addAsync path is structurally singleton-free: it cannot
-// receive the Singleton lifetime, just as it cannot carry the eager option.
+// The addNonSingleton path is structurally singleton-free: it cannot receive
+// the Singleton lifetime, just as it cannot carry the eager option.
 type NonSingletonLifetime = Exclude<Lifetime, typeof Lifetimes.Singleton>;
 
-// Non-exported brand: prevents a plain object literal from satisfying Module
-// structurally. Modules can only come from createModule()/ModuleBuilder.
 declare const MODULE_BRAND: unique symbol;
 
-/** Public, read-only view of a module. The concrete class is not exported, and
- *  the brand cannot be produced outside this module, so there is no ordinary
- *  construction path that bypasses builder validation. */
+/** Public, read-only view of a module. The concrete class is not exported and
+ *  the brand cannot be produced outside this file, so a structural look-alike
+ *  does not typecheck: modules only come from createModule()/ModuleBuilder. */
 export interface Module {
   readonly [MODULE_BRAND]: true;
   entries(): IterableIterator<[AnyToken<any>, Definition<any>]>;
@@ -34,20 +32,22 @@ class BuiltModule implements Module {
   // Brand is phantom: declared on the type, asserted here, never read at runtime.
   declare readonly [MODULE_BRAND]: true;
 
-  private readonly _definitions: ReadonlyMap<AnyToken<any>, Definition<any>>;
+  // An ECMAScript private field, not TS `private`: the map must not exist as
+  // a runtime property at all (TS visibility erases at runtime).
+  readonly #definitions: ReadonlyMap<AnyToken<any>, Definition<any>>;
 
   constructor(definitions: ReadonlyMap<AnyToken<any>, Definition<any>>) {
-    this._definitions = new Map(
+    this.#definitions = new Map(
       [...definitions].map(([token, definition]) => [token, Object.freeze({ ...definition })]),
     );
   }
 
   entries(): IterableIterator<[AnyToken<any>, Definition<any>]> {
-    return this._definitions.entries();
+    return this.#definitions.entries();
   }
 
   keys(): IterableIterator<AnyToken<any>> {
-    return this._definitions.keys();
+    return this.#definitions.keys();
   }
 }
 
@@ -60,8 +60,8 @@ export class ModuleBuilder {
     }
   }
 
-  // Singleton registration is the only path that reads `eager`; the shared
-  // add/addAsync below cannot carry it even if a caller smuggles the option
+  // Singleton registration is the only path that reads `eager`; the
+  // addNonSingleton path cannot carry it even if a caller smuggles the option
   // past the (literal-only) excess-property check.
   private addSingleton<T>(token: Token<T>, provider: SyncProvider<T>, options?: SingletonDefinitionOptions<T>): void {
     this.assertNewToken(token);
@@ -93,7 +93,7 @@ export class ModuleBuilder {
     this.definitions.set(token, definition);
   }
 
-  private add<T>(
+  private addNonSingleton<T>(
     token: Token<T>,
     lifetime: NonSingletonLifetime,
     provider: SyncProvider<T>,
@@ -110,7 +110,7 @@ export class ModuleBuilder {
     this.definitions.set(token, definition);
   }
 
-  private addAsync<T>(
+  private addNonSingletonAsync<T>(
     token: AsyncToken<T>,
     lifetime: NonSingletonLifetime,
     provider: AsyncProvider<T>,
@@ -134,16 +134,16 @@ export class ModuleBuilder {
     this.addSingletonAsync(token, provider, options);
   }
   factory<T>(token: Token<T>, provider: SyncProvider<T>, options?: DefinitionOptions<T>): void {
-    this.add(token, Lifetimes.Factory, provider, options);
+    this.addNonSingleton(token, Lifetimes.Factory, provider, options);
   }
   factoryAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>, options?: DefinitionOptions<T>): void {
-    this.addAsync(token, Lifetimes.Factory, provider, options);
+    this.addNonSingletonAsync(token, Lifetimes.Factory, provider, options);
   }
   scoped<T>(token: Token<T>, provider: SyncProvider<T>, options?: DefinitionOptions<T>): void {
-    this.add(token, Lifetimes.Scoped, provider, options);
+    this.addNonSingleton(token, Lifetimes.Scoped, provider, options);
   }
   scopedAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>, options?: DefinitionOptions<T>): void {
-    this.addAsync(token, Lifetimes.Scoped, provider, options);
+    this.addNonSingletonAsync(token, Lifetimes.Scoped, provider, options);
   }
 
   build(): Module {
