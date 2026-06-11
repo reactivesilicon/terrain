@@ -3,6 +3,7 @@ import {
   CaptiveDependencyError,
   CircularDependencyError,
   DefinitionInUseError,
+  DependentInstanceError,
   DisposedContainerError,
   DuplicateDefinitionError,
   isFrameworkError,
@@ -29,6 +30,7 @@ import {
   type SyncResolver,
 } from "../types";
 import { flattenErrors, tokenName } from "../utils";
+import { DependencyGraph } from "./dependency-graph";
 import { DisposableRegistry } from "./disposable-registry";
 import { InstanceKinds, ResolutionCache } from "./resolution-cache";
 import type { ResolutionHost } from "./resolution-host";
@@ -60,6 +62,9 @@ export class Container implements ResolutionHost {
   // is only ever set/read on the tree ROOT, so a single lifecycle operation is
   // exclusive across the entire container tree.
   private lifecycleBusy = false;
+
+  // Like the lifecycle flag: every node carries one, only the ROOT's is used.
+  private readonly dependencyGraph = new DependencyGraph();
 
   constructor(options: ContainerOptions = {}) {
     this.options = options;
@@ -139,7 +144,11 @@ export class Container implements ResolutionHost {
 
       // Commit.
       for (const [token, definition] of entries) {
+        const replacesExistingDefinition = this.definitions.has(token);
         this.definitions.set(token, definition);
+        // The replaced definition has no live instance (preflight ensures it),
+        // so its edges describe a dead incarnation and must not linger.
+        if (replacesExistingDefinition) this.purgeDependencyEdges(token);
       }
     } finally {
       this.endTreeLifecycle(lock);
@@ -162,11 +171,19 @@ export class Container implements ResolutionHost {
         }
       }
 
+      // Refuse before mutating anything: a cached (or in-flight) instance
+      // outside the module that captured one of its instances would be left
+      // holding a disposed dependency.
+      const tokenSet = new Set(tokens);
+      const liveDependents = this.collectLiveDependents(tokenSet);
+      if (liveDependents.length > 0) {
+        throw new DependentInstanceError(liveDependents.map(tokenName));
+      }
+
       // Gate resolution of these tokens for the duration. findOwner() treats an
       // unloading token as absent, so an orphaned in-flight provider that resumes
       // mid-unload and calls get()/getAsync() for one of them fails fast instead
       // of re-creating and re-caching it after eviction.
-      const tokenSet = new Set(tokens);
       for (const token of tokens) this.markUnloadingDeep(token);
 
       try {
@@ -175,6 +192,7 @@ export class Container implements ResolutionHost {
 
         for (const token of tokens) {
           this.definitions.delete(token);
+          this.purgeDependencyEdges(token);
         }
 
         if (errors.length > 0) {
@@ -265,6 +283,7 @@ export class Container implements ResolutionHost {
     this.checkCircularDependency(token, chain);
     this.checkCaptiveDependency(definition, token, chain);
     if (definition.async) throw new AsyncProviderError(tokenName(token));
+    this.recordResolvedDependency(token, chain);
 
     const next = this.extend(chain, token, definition.lifetime);
     switch (definition.lifetime) {
@@ -329,6 +348,7 @@ export class Container implements ResolutionHost {
     this.checkCircularDependency(token, chain);
     this.checkCaptiveDependency(definition, token, chain);
     if (!definition.async) throw new SyncProviderError(tokenName(token));
+    this.recordResolvedDependency(token, chain);
 
     const next = this.extend(chain, token, definition.lifetime);
     switch (definition.lifetime) {
@@ -443,6 +463,23 @@ export class Container implements ResolutionHost {
     for (const child of this.children) child.unmarkUnloadingDeep(token);
   }
 
+  // ── Dependent tracking (unload safety) ────────────────────────────────
+  // The graph lives on the ROOT; Container contributes only what the graph
+  // cannot know: when to record, and what counts as a live instance.
+
+  private recordResolvedDependency(token: AnyToken<any>, chain: ResolutionFrame[]): void {
+    this.root().dependencyGraph.recordResolvedDependency(token, chain);
+  }
+
+  private collectLiveDependents(unloadSet: ReadonlySet<AnyToken<any>>): AnyToken<any>[] {
+    const root = this.root();
+    return root.dependencyGraph.collectLiveDependents(unloadSet, (token) => root.hasCachedInstanceDeep(token));
+  }
+
+  private purgeDependencyEdges(token: AnyToken<any>): void {
+    this.root().dependencyGraph.purge(token);
+  }
+
   private checkCircularDependency(token: AnyToken<any>, chain: ResolutionFrame[]): void {
     if (chain.some((frame) => frame.token === token)) {
       throw new CircularDependencyError([...chain.map((f) => f.token), token].map(tokenName));
@@ -535,6 +572,14 @@ export class Container implements ResolutionHost {
     await this.disposables.disposeReverse({ onError: (e) => errors.push(e) });
 
     this.resolutionCache.clearInstances();
+
+    // Scope-local definitions die with this container; purge their edges
+    // BEFORE detaching from the parent, while root() can still reach the
+    // graph. The root's own graph dies with the root.
+    if (this.parent) {
+      for (const token of this.definitions.keys()) this.purgeDependencyEdges(token);
+    }
+    this.definitions.clear();
 
     this.parent?.children.delete(this);
 

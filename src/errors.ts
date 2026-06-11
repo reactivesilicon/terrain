@@ -63,6 +63,16 @@ export class DefinitionInUseError extends DIError {
   }
 }
 
+export class DependentInstanceError extends DIError {
+  constructor(dependents: string[]) {
+    super(
+      `Cannot unload: live instance(s) of ${dependents.map((d) => `'${d}'`).join(", ")} depend on the module's definitions. ` +
+        `Dispose or unload the dependents first.`,
+    );
+    this.name = "DependentInstanceError";
+  }
+}
+
 export class ModuleOwnershipError extends DIError {
   constructor(name: string) {
     super(`Cannot unload token '${name}': it is not owned by this container.`);

@@ -16,6 +16,7 @@ import "./runs/errors";
 import "./runs/modules";
 import "./runs/concurrency";
 import "./runs/accessors";
+import "./runs/dependents";
 import { runAll } from "./harness";
 
 void runAll();

@@ -376,6 +376,8 @@ await container.unload(oldModule);
 container.load(newModule);
 ```
 
+Unload is refused with `DependentInstanceError` while a live instance outside the module depends on one of its definitions — otherwise that instance would be left holding a disposed dependency. Unload or dispose the dependents first (or unload everything in one module). The check is conservative: any token a provider resolved during construction counts as captured. Its limit: references held by application code (a top-level `get()` result) cannot be tracked.
+
 You cannot override a token while it has a cached or in-flight instance.
 
 ```ts
@@ -471,6 +473,7 @@ import {
   CaptiveDependencyError,
   CircularDependencyError,
   DefinitionInUseError,
+  DependentInstanceError,
   DisposedContainerError,
   DuplicateDefinitionError,
   LifecycleOperationError,
