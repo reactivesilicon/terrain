@@ -6,8 +6,8 @@
 declare const TOKEN_BRAND: unique symbol;
 
 export const TokenModes = {
-  SYNC: "sync",
-  ASYNC: "async",
+  Sync: "sync",
+  Async: "async",
 } as const;
 export type TokenMode = (typeof TokenModes)[keyof typeof TokenModes];
 
@@ -15,7 +15,7 @@ export type TokenMode = (typeof TokenModes)[keyof typeof TokenModes];
 export interface Token<T> {
   readonly [TOKEN_BRAND]: true;
   readonly description: string;
-  readonly mode: typeof TokenModes.SYNC;
+  readonly mode: typeof TokenModes.Sync;
   readonly __type?: T;
 }
 
@@ -23,7 +23,7 @@ export interface Token<T> {
 export interface AsyncToken<T> {
   readonly [TOKEN_BRAND]: true;
   readonly description: string;
-  readonly mode: typeof TokenModes.ASYNC;
+  readonly mode: typeof TokenModes.Async;
   readonly __type?: T;
 }
 
@@ -65,16 +65,16 @@ abstract class BaseToken<T, M extends TokenMode> {
   }
 }
 
-class SyncTokenImpl<T> extends BaseToken<T, typeof TokenModes.SYNC> implements Token<T> {
+class SyncTokenImpl<T> extends BaseToken<T, typeof TokenModes.Sync> implements Token<T> {
   constructor(description: string) {
-    super(description, TokenModes.SYNC);
+    super(description, TokenModes.Sync);
     Object.freeze(this);
   }
 }
 
-class AsyncTokenImpl<T> extends BaseToken<T, typeof TokenModes.ASYNC> implements AsyncToken<T> {
+class AsyncTokenImpl<T> extends BaseToken<T, typeof TokenModes.Async> implements AsyncToken<T> {
   constructor(description: string) {
-    super(description, TokenModes.ASYNC);
+    super(description, TokenModes.Async);
     Object.freeze(this);
   }
 }
@@ -89,5 +89,5 @@ export function createAsyncToken<T>(description: string): AsyncToken<T> {
 
 /** True if the token was created by createAsyncToken. */
 export function isAsyncToken(token: AnyToken<any>): token is AsyncToken<any> {
-  return token.mode === TokenModes.ASYNC;
+  return token.mode === TokenModes.Async;
 }
