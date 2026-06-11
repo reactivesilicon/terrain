@@ -7,13 +7,13 @@ No decorators. No reflection. No framework dependency. Just a small, explicit, D
 ## Installation
 
 ```sh
-bun add terrain
+bun add terrain-di
 ```
 
 Or with npm:
 
 ```sh
-npm install terrain
+npm install terrain-di
 ```
 
 ## Why terrain?
@@ -37,7 +37,7 @@ It gives you:
 ## Quick start
 
 ```ts
-import { Container, createModule, createSyncToken } from "terrain";
+import { Container, createModule, createSyncToken } from "terrain-di";
 
 class Logger {
   info(message: string): void {
@@ -78,7 +78,7 @@ userService.createUser("Ada");
 Dependencies are identified by typed tokens.
 
 ```ts
-import { createSyncToken, createAsyncToken } from "terrain";
+import { createSyncToken, createAsyncToken } from "terrain-di";
 
 const ConfigToken = createSyncToken<{ databaseUrl: string }>("Config");
 const DatabaseToken = createAsyncToken<Database>("Database");
@@ -313,7 +313,7 @@ The lazy getter does not cache independently. It always resolves through the con
 Use `createAccessors` to give consumers named accessors instead of tokens. Tokens stay a wiring detail; call sites read like an API.
 
 ```ts
-import { createAccessors } from "terrain";
+import { createAccessors } from "terrain-di";
 
 const app = createAccessors(container, {
   logger: LoggerToken, // sync token  -> app.logger(): Logger
@@ -512,13 +512,13 @@ import {
   ModuleOwnershipError,
   ProviderExecutionError,
   ShadowedDefinitionError,
-} from "terrain";
+} from "terrain-di";
 ```
 
 All framework errors extend `DIError`.
 
 ```ts
-import { DIError, isFrameworkError } from "terrain";
+import { DIError, isFrameworkError } from "terrain-di";
 
 try {
   container.get(Token);

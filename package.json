@@ -1,5 +1,5 @@
 {
-  "name": "terrain",
+  "name": "terrain-di",
   "version": "0.1.0",
   "description": "A pragmatic DSL-based TypeScript Dependency Injection framework. No decorators, no reflection, no framework dependency",
   "keywords": [
@@ -9,7 +9,15 @@
     "ioc",
     "typescript"
   ],
+  "homepage": "https://github.com/reactivesilicon/terrain#readme",
+  "bugs": {
+    "url": "https://github.com/reactivesilicon/terrain/issues"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reactivesilicon/terrain.git"
+  },
   "files": [
     "dist",
     "README.md",
