@@ -93,6 +93,27 @@ describe("disposal", () => {
     expect(n).toBe(1);
   });
 
+  it("a child scope disposer failure surfaces in the root dispose AggregateError", async () => {
+    const T = createSyncToken<object>("childBoom");
+    const root = new Container();
+    root.load(
+      createModule((m) =>
+        m.scoped(T, () => ({}), {
+          dispose: () => {
+            throw new Error("child-boom");
+          },
+        }),
+      ),
+    );
+    root.createScope().get(T);
+    const failure = await root.dispose().then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors.some((e) => e instanceof Error && e.message === "child-boom")).toBe(true);
+  });
+
   it("a disposed container rejects further resolution", async () => {
     const T = createSyncToken<number>("postDispose");
     const c = new Container();

@@ -6,6 +6,7 @@ import {
   DisposedContainerError,
   DuplicateDefinitionError,
   LifecycleOperationError,
+  MissingDependencyError,
   ModuleOwnershipError,
 } from "../../src";
 import { delay, ignore } from "../helpers";
@@ -166,6 +167,31 @@ describe("lifecycle: unload", () => {
     }
     expect(threw, "expected AggregateError").toBeTruthy();
     expect(c.has(T), "definition must still be removed").toBe(false);
+  });
+
+  it("an in-flight provider resolving a sibling token mid-unload sees it as absent", async () => {
+    const A = createAsyncToken<{ b: number }>("muSibA");
+    const B = createSyncToken<number>("muSibB");
+    let openGate!: () => void;
+    const gate = new Promise<void>((r) => {
+      openGate = r;
+    });
+    const mod = createModule((m) => {
+      m.single(B, () => 7);
+      m.singleAsync(A, async (r) => {
+        await gate; // suspend until the unload below has marked both tokens
+        return { b: r.get(B) };
+      });
+    });
+    const c = new Container();
+    c.load(mod);
+    const pending = ignore(c.getAsync(A));
+    await delay(5);
+    const unloading = c.unload(mod); // marks A and B, then awaits the pending resolution
+    openGate();
+    await expect(pending).rejects.toThrowError(MissingDependencyError);
+    await unloading;
+    expect(c.has(B)).toBe(false);
   });
 
   it("a token mid-unload cannot be re-resolved by an in-flight provider", async () => {

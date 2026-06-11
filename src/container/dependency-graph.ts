@@ -77,6 +77,8 @@ export class DependencyGraph {
 
   private static removeEdge(edges: EdgeMap, source: AnyToken<any>, target: AnyToken<any>): void {
     const targets = edges.get(source);
+    /* v8 ignore next -- unreachable: edges are always added pairwise, so the
+       inverse set exists whenever purge finds a forward entry. */
     if (!targets) return;
     targets.delete(target);
     if (targets.size === 0) edges.delete(source);

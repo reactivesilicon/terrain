@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createModule, createSyncToken } from "../../src";
+import { Container, createAsyncToken, createModule, createSyncToken } from "../../src";
 
 describe("resolution", () => {
   it("providers receive a resolver and can pull dependencies", () => {
@@ -81,6 +81,54 @@ describe("resolution", () => {
     c.load(createModule((m) => m.single(T, () => 1)));
     expect(c.has(T)).toBe(true);
     expect(c.has(U)).toBe(false);
+  });
+
+  it("sync providers can probe optional dependencies with has()", () => {
+    const Present = createSyncToken<number>("probePresent");
+    const Absent = createSyncToken<number>("probeAbsent");
+    const Probe = createSyncToken<{ present: boolean; absent: boolean }>("probe");
+    const c = new Container();
+    c.load(
+      createModule((m) => {
+        m.single(Present, () => 1);
+        m.single(Probe, (r) => ({ present: r.has(Present), absent: r.has(Absent) }));
+      }),
+    );
+    expect(c.get(Probe)).toEqual({ present: true, absent: false });
+  });
+
+  it("async providers can probe both token kinds with has()", async () => {
+    const SyncDep = createSyncToken<number>("aprobeSync");
+    const AsyncDep = createAsyncToken<number>("aprobeAsync");
+    const Probe = createAsyncToken<{ syncSeen: boolean; asyncSeen: boolean }>("aprobe");
+    const c = new Container();
+    c.load(
+      createModule((m) => {
+        m.single(SyncDep, () => 1);
+        m.singleAsync(AsyncDep, async () => 2);
+        m.singleAsync(Probe, async (r) => ({ syncSeen: r.has(SyncDep), asyncSeen: r.has(AsyncDep) }));
+      }),
+    );
+    expect(await c.getAsync(Probe)).toEqual({ syncSeen: true, asyncSeen: true });
+  });
+
+  it("injectAsync() is lazy and resolves through the container", async () => {
+    const T = createAsyncToken<number>("lazyAsync");
+    let built = 0;
+    const c = new Container();
+    c.load(
+      createModule((m) =>
+        m.singleAsync(T, async () => {
+          built += 1;
+          return 42;
+        }),
+      ),
+    );
+    const getT = c.injectAsync(T);
+    expect(built).toBe(0);
+    expect(await getT()).toBe(42);
+    expect(await getT()).toBe(42);
+    expect(built).toBe(1);
   });
 
   it("inject() is lazy and honors lifetime", () => {

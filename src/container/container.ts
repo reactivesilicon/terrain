@@ -79,10 +79,6 @@ export class Container implements ResolutionHost {
     this.disposables.track(token, instance, dispose);
   }
 
-  invokeProviderSync<T>(definition: SyncDefinition<T>, chain: ResolutionFrame[]): T {
-    return this.invokeProvider(definition, chain);
-  }
-
   invokeProviderAsync<T>(definition: AsyncDefinition<T>, chain: ResolutionFrame[]): Promise<T> {
     return this.invokeProvider(definition, chain);
   }
@@ -313,10 +309,13 @@ export class Container implements ResolutionHost {
         return this.resolveScopedSync(token, definition, next);
       case Lifetimes.Factory:
         return this.resolveFactorySync(definition, next);
+      /* v8 ignore start -- unreachable: the never-typed exhaustiveness check
+         only fires if Lifetime gains a member without a case here. */
       default: {
         const _exhaustive: never = definition.lifetime;
         throw new Error(`Unknown lifetime: ${String(_exhaustive)}`);
       }
+      /* v8 ignore stop */
     }
   }
 
@@ -344,7 +343,11 @@ export class Container implements ResolutionHost {
   private guardAfterConstruction<T>(token: Token<any>, instance: T, dispose?: Disposer<T>): void {
     if (this.isTreeDisposed() || this.unloading.has(token)) {
       if (dispose) {
-        void Promise.resolve(dispose(instance)).catch((e) => this.notifyDisposeError(e));
+        // .then(), not Promise.resolve(dispose(...)): a synchronously-throwing
+        // disposer must land in the catch, not escape into the caller.
+        void Promise.resolve()
+          .then(() => dispose(instance))
+          .catch((e) => this.notifyDisposeError(e));
       }
       throw new DisposedContainerError();
     }
@@ -378,10 +381,13 @@ export class Container implements ResolutionHost {
         return this.resolutionCache.resolveCachedAsync(InstanceKinds.Scoped, token, definition, next);
       case Lifetimes.Factory:
         return this.resolutionCache.resolveFactoryAsync(definition, next);
+      /* v8 ignore start -- unreachable: the never-typed exhaustiveness check
+         only fires if Lifetime gains a member without a case here. */
       default: {
         const _exhaustive: never = definition.lifetime;
         throw new Error(`Unknown lifetime: ${String(_exhaustive)}`);
       }
+      /* v8 ignore stop */
     }
   }
 
@@ -444,6 +450,7 @@ export class Container implements ResolutionHost {
   private findOwner<T>(token: AnyToken<T>): ResolvedDefinition<T> | undefined {
     // Never resolve through a disposed container (defensive: also covers a
     // child left alive past an ancestor's disposal by some future bug).
+    /* v8 ignore next -- unreachable: assertTreeUsable runs before every findOwner. */
     if (this.disposed) return undefined;
     const localDefinition = this.definitions.get(token);
     if (localDefinition) {
@@ -558,6 +565,8 @@ export class Container implements ResolutionHost {
     // anywhere in the tree. Cascade disposal uses disposeInternal (no re-lock).
     const lock = this.beginTreeLifecycle();
     try {
+      /* v8 ignore next -- unreachable: nothing can interleave between the entry
+         check and the (synchronous) lock acquisition. Guards future refactors. */
       if (this.disposed) return; // re-check under lock
       await this.disposeInternal();
     } finally {
@@ -566,6 +575,8 @@ export class Container implements ResolutionHost {
   }
 
   private async disposeInternal(): Promise<void> {
+    /* v8 ignore next -- unreachable: a disposed child removes itself from its
+       parent's children, so the cascade never revisits one. Guards future refactors. */
     if (this.disposed) return;
     this.disposed = true;
 

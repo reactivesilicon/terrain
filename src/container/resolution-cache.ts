@@ -206,9 +206,11 @@ export class ResolutionCache {
         return this.singletonInstances;
       case InstanceKinds.Scoped:
         return this.scopedInstances;
+      /* v8 ignore start -- unreachable: InstanceKind is exhaustive. */
       default: {
         throw new Error(`Unknown instance kind: ${String(kind)}`);
       }
+      /* v8 ignore stop */
     }
   }
 
@@ -218,9 +220,11 @@ export class ResolutionCache {
         return this.singletonResolutionPromises;
       case InstanceKinds.Scoped:
         return this.scopedResolutionPromises;
+      /* v8 ignore start -- unreachable: InstanceKind is exhaustive. */
       default: {
         throw new Error(`Unknown instance kind: ${String(kind)}`);
       }
+      /* v8 ignore stop */
     }
   }
 }

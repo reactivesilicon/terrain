@@ -40,6 +40,33 @@ describe("scopes", () => {
     ).rejects.toBe(bodyErr);
   });
 
+  it("withScope rethrows the disposal failure when the body succeeded", async () => {
+    const T = createSyncToken<object>("wsDispFail");
+    const root = new Container();
+    root.load(
+      createModule((m) =>
+        m.scoped(T, () => ({}), {
+          dispose: () => {
+            throw new Error("teardown-fail");
+          },
+        }),
+      ),
+    );
+    const failure = await root
+      .withScope(async (scope) => {
+        scope.get(T);
+        return "body-ok";
+      })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors.some((e) => e instanceof Error && e.message === "teardown-fail")).toBe(
+      true,
+    );
+  });
+
   it("withScope aggregates body + disposal errors (flattened)", async () => {
     const T = createSyncToken<{ dispose(): void }>("wsAgg");
     const root = new Container();

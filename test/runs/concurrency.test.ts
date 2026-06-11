@@ -156,6 +156,61 @@ describe("concurrency", () => {
     expect(built > 0, "the race window must have actually built instances").toBeTruthy();
   });
 
+  it("a sync provider that triggers teardown during construction orphans its result", async () => {
+    const T = createSyncToken<{ end(): void }>("syncOrphan");
+    let ended = 0;
+    const c = new Container();
+    c.load(
+      createModule((m) =>
+        m.single(
+          T,
+          () => {
+            void c.dispose(); // teardown begins during the provider's own construction
+            return {
+              end: () => {
+                ended += 1;
+              },
+            };
+          },
+          { dispose: (x) => x.end() },
+        ),
+      ),
+    );
+    expect(() => c.get(T)).toThrowError(DisposedContainerError);
+    await delay(1); // orphan disposal is fire-and-forget
+    expect(ended).toBe(1);
+  });
+
+  it("a failing orphan disposer from a sync construction reports via onDisposeError", async () => {
+    const T = createSyncToken<object>("syncOrphanFail");
+    let observed: unknown = null;
+    const c = new Container({
+      onDisposeError: (e) => {
+        observed = e;
+      },
+    });
+    c.load(
+      createModule((m) =>
+        m.single(
+          T,
+          () => {
+            void c.dispose();
+            return {};
+          },
+          {
+            dispose: () => {
+              throw new Error("orphan-end-fail");
+            },
+          },
+        ),
+      ),
+    );
+    expect(() => c.get(T)).toThrowError(DisposedContainerError);
+    await delay(1);
+    expect(observed).toBeInstanceOf(Error);
+    expect((observed as Error).message).toBe("orphan-end-fail");
+  });
+
   it("deep scope chain resolves and per-resolve ancestor walk stays cheap", () => {
     const Root = createSyncToken<number>("deepRoot");
     const Leaf = createSyncToken<{ n: number }>("deepLeaf");
