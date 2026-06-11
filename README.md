@@ -125,7 +125,7 @@ Unload a module:
 await container.unload(module);
 ```
 
-A module can only be unloaded from the container that owns its definitions.
+A module can only be unloaded from the container it was loaded into, and only by the module object that loaded the definitions. After an override, unload the replacement module — a stale module object is rejected with `ModuleOwnershipError`.
 
 ## Lifetimes
 
@@ -182,6 +182,8 @@ const b1 = scopeB.get(RequestContextToken);
 console.log(a1 === a2); // true
 console.log(a1 === b1); // false
 ```
+
+Every container is a scope; the root is simply the outermost one. Resolving a scoped token directly on the root is legal and caches the instance on the root — where it lives until the root is disposed, making it indistinguishable from a singleton. The distinction between the two lifetimes is _where the cache lives_: `single` is one instance per tree, cached on the owning container; `scoped` is one instance per **resolving** container, each holding its own copy.
 
 Dispose a scope when finished:
 
@@ -485,6 +487,12 @@ await container.unload(oldModule);
 
 container.load(testModule);
 ```
+
+## Known limitations
+
+- **Cycles split across concurrent async resolutions deadlock instead of throwing.** Cycle detection rides each call's own resolution chain. If two concurrent `getAsync` calls each start one half of a cycle (A waiting on B's in-flight resolution while B waits on A's), neither chain contains the full loop, so no `CircularDependencyError` is raised and both promises hang. Cycles within a single resolution chain are always detected. A wait-for graph across in-flight resolutions may lift this in a future version.
+- **Unload safety cannot see references held outside the container.** Dependent tracking covers everything wired through providers, but a top-level `get()` result stored by application code is invisible — unloading its module leaves that reference holding a disposed instance.
+- **Dependent tracking is conservative.** A provider that resolves a token during construction is treated as having captured it, even if it only read a value and dropped the reference. False positives refuse a safe unload loudly; there are no false negatives within the container's wiring.
 
 ## Error types
 

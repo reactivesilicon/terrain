@@ -1,5 +1,5 @@
 import { Container, createModule, createSyncToken } from "../../src";
-import { DuplicateDefinitionError } from "../../src";
+import { DuplicateDefinitionError, ModuleOwnershipError } from "../../src";
 import { suite, assert, assertEqual, assertThrows, isInstance } from "../harness";
 
 suite("modules", (test) => {
@@ -80,6 +80,30 @@ suite("modules", (test) => {
     assertEqual(a.get(T), 1);
     assertEqual(b.get(T), 1);
     assert(a.get(T) === 1 && b.get(T) === 1);
+  });
+
+  test("a stale module cannot unload its replacement after an override", async () => {
+    const T = createSyncToken<number>("ownStale");
+    const v1 = createModule((m) => m.single(T, () => 1));
+    const v2 = createModule((m) => m.single(T, () => 2));
+    const c = new Container();
+    c.load(v1);
+    c.load(v2, { override: true });
+    await assertThrows(() => c.unload(v1), isInstance(ModuleOwnershipError));
+    assertEqual(c.get(T), 2, "the replacement's wiring is untouched");
+    await c.unload(v2); // the current owner can unload
+  });
+
+  test("a stale module cannot unload after unload+reload of its tokens", async () => {
+    const T = createSyncToken<number>("ownReload");
+    const v1 = createModule((m) => m.single(T, () => 1));
+    const v2 = createModule((m) => m.single(T, () => 2));
+    const c = new Container();
+    c.load(v1);
+    await c.unload(v1);
+    c.load(v2);
+    await assertThrows(() => c.unload(v1), isInstance(ModuleOwnershipError));
+    assertEqual(c.get(T), 2);
   });
 
   test("loading the same module twice without override throws", async () => {

@@ -75,7 +75,7 @@ export class DependentInstanceError extends DIError {
 
 export class ModuleOwnershipError extends DIError {
   constructor(name: string) {
-    super(`Cannot unload token '${name}': it is not owned by this container.`);
+    super(`Cannot unload token '${name}': it was not loaded by this module on this container.`);
     this.name = "ModuleOwnershipError";
   }
 }

@@ -45,6 +45,7 @@ export class Container implements ResolutionHost {
   private readonly options: ContainerOptions;
 
   private definitions = new Map<AnyToken<any>, Definition<any>>();
+  private definitionOwners = new Map<AnyToken<any>, Module>();
 
   private readonly resolutionCache = new ResolutionCache(this);
 
@@ -146,6 +147,7 @@ export class Container implements ResolutionHost {
       for (const [token, definition] of entries) {
         const replacesExistingDefinition = this.definitions.has(token);
         this.definitions.set(token, definition);
+        this.definitionOwners.set(token, module);
         // The replaced definition has no live instance (preflight ensures it),
         // so its edges describe a dead incarnation and must not linger.
         if (replacesExistingDefinition) this.purgeDependencyEdges(token);
@@ -166,7 +168,7 @@ export class Container implements ResolutionHost {
       const tokens = [...module.keys()];
 
       for (const token of tokens) {
-        if (!this.definitions.has(token)) {
+        if (this.definitionOwners.get(token) !== module) {
           throw new ModuleOwnershipError(tokenName(token));
         }
       }
@@ -192,6 +194,7 @@ export class Container implements ResolutionHost {
 
         for (const token of tokens) {
           this.definitions.delete(token);
+          this.definitionOwners.delete(token);
           this.purgeDependencyEdges(token);
         }
 
@@ -597,6 +600,7 @@ export class Container implements ResolutionHost {
       for (const token of this.definitions.keys()) this.purgeDependencyEdges(token);
     }
     this.definitions.clear();
+    this.definitionOwners.clear();
 
     this.parent?.children.delete(this);
 
