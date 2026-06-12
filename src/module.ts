@@ -30,9 +30,7 @@ class BuiltModule implements Module {
   readonly #definitions: ReadonlyMap<AnyToken<any>, Definition<any>>;
 
   constructor(definitions: ReadonlyMap<AnyToken<any>, Definition<any>>) {
-    this.#definitions = new Map(
-      [...definitions].map(([token, definition]) => [token, Object.freeze({ ...definition })]),
-    );
+    this.#definitions = new Map([...definitions].map(([token, definition]) => [token, Object.freeze(definition)]));
   }
 
   entries(): IterableIterator<[AnyToken<any>, Definition<any>]> {
