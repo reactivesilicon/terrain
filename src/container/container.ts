@@ -319,8 +319,7 @@ export class Container implements ResolutionHost {
       /* v8 ignore start -- unreachable: the never-typed exhaustiveness check
          only fires if Lifetime gains a member without a case here. */
       default: {
-        const _exhaustive: never = definition.lifetime;
-        throw new Error(`Unknown lifetime: ${String(_exhaustive)}`);
+        throw new Error(`Unknown definition lifetime: ${String(definition)}`);
       }
       /* v8 ignore stop */
     }
@@ -391,8 +390,7 @@ export class Container implements ResolutionHost {
       /* v8 ignore start -- unreachable: the never-typed exhaustiveness check
          only fires if Lifetime gains a member without a case here. */
       default: {
-        const _exhaustive: never = definition.lifetime;
-        throw new Error(`Unknown lifetime: ${String(_exhaustive)}`);
+        throw new Error(`Unknown definition lifetime: ${String(definition)}`);
       }
       /* v8 ignore stop */
     }

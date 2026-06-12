@@ -6,6 +6,7 @@ export const Lifetimes = {
   Scoped: "scoped",
 } as const;
 export type Lifetime = (typeof Lifetimes)[keyof typeof Lifetimes];
+export type NonSingletonLifetime = Exclude<Lifetime, typeof Lifetimes.Singleton>;
 
 /** Resolver handed to synchronous providers — no getAsync. Within a resolver,
  *  has(t) implies t is resolvable from it, so only sync tokens are accepted. */
@@ -46,24 +47,28 @@ export interface SingletonDefinitionOptions<T> extends DefinitionOptions<T> {
   eager?: boolean;
 }
 
-/** Immutable once built (frozen by Module). */
-export type SyncDefinition<T> = Readonly<{
-  token: Token<T>;
-  lifetime: Lifetime;
-  async: false;
-  provider: SyncProvider<T>;
-  dispose?: Disposer<T>;
-  eager?: boolean;
-}>;
+type LifetimeOptions =
+  | { lifetime: typeof Lifetimes.Singleton; eager?: boolean }
+  | { lifetime: NonSingletonLifetime; eager?: never };
 
-export type AsyncDefinition<T> = Readonly<{
-  token: AsyncToken<T>;
-  lifetime: Lifetime;
-  async: true;
-  provider: AsyncProvider<T>;
-  dispose?: Disposer<T>;
-  eager?: boolean;
-}>;
+/** Immutable once built (frozen by Module). */
+export type SyncDefinition<T> = Readonly<
+  {
+    token: Token<T>;
+    async: false;
+    provider: SyncProvider<T>;
+    dispose?: Disposer<T>;
+  } & LifetimeOptions
+>;
+
+export type AsyncDefinition<T> = Readonly<
+  {
+    token: AsyncToken<T>;
+    async: true;
+    provider: AsyncProvider<T>;
+    dispose?: Disposer<T>;
+  } & LifetimeOptions
+>;
 
 export type Definition<T> = SyncDefinition<T> | AsyncDefinition<T>;
 

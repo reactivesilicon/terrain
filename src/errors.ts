@@ -46,6 +46,13 @@ export class DisposedContainerError extends DIError {
   }
 }
 
+export class InvalidDefinitionError extends DIError {
+  constructor(definition: string) {
+    super(`Only singleton definitions can be eager (nothing else constructs at start()). Got: ${definition}`);
+    this.name = "InvalidDefinitionError";
+  }
+}
+
 export class DuplicateDefinitionError extends DIError {
   constructor(name: string) {
     super(`Definition already exists for token '${name}'. Load with { override: true } to replace it.`);
