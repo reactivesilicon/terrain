@@ -149,11 +149,14 @@ describe("modules", () => {
     ).toThrowError(DuplicateDefinitionError);
   });
 
-  it("define() copies the record: mutating it afterwards does not affect the module", () => {
-    const T = createSyncToken<number>("defCopy");
+  it("define()d records are frozen at build time, so later mutation cannot affect the module", () => {
+    const T = createSyncToken<number>("defFreeze");
     const record = { token: T, lifetime: Lifetimes.Singleton, async: false as const, provider: () => 1 };
     const mod = createModule((m) => m.define(record));
-    record.provider = () => 2;
+    expect(Object.isFrozen(record), "build freezes the given record in place").toBe(true);
+    expect(() => {
+      record.provider = () => 2;
+    }).toThrowError(TypeError);
     const c = new Container();
     c.load(mod);
     expect(c.get(T)).toBe(1);

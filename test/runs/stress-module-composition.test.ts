@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DIError } from "../../src";
-import { createContainer, createModule, type NamedModule } from "../../src/named/named";
+import { createContainer, createModule, type NamedModule } from "../../src/module-composition/composition";
 import { delay, random } from "../helpers";
 
 /**

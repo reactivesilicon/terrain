@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DIError, DisposedContainerError, InvalidEntryNameError } from "../../src";
-import { createContainer, createModule } from "../../src/named/named";
+import { createContainer, createModule } from "../../src/module-composition/composition";
 import { delay } from "../helpers";
 
 interface Logger {
@@ -216,12 +216,16 @@ describe("named modules (spike)", () => {
     expect(() => app.Mod.x()).toThrowError(DisposedContainerError);
   });
 
-  it("the underlying container stays reachable for engine-level operations", async () => {
+  it("views do not expose the engine container or tokens", async () => {
     const Mod = createModule("Mod", (m) => m.single("x", () => 1));
     const app = createContainer(Mod);
-    expect(app.container.has).toBeTypeOf("function");
-    await app.container.dispose();
-    await expect(app.container.start()).rejects.toThrowError(DisposedContainerError);
+    expect((app as Record<string, unknown>)["container"], "no engine escape hatch on the app view").toBe(undefined);
+    const requestScope = app.scope();
+    expect((requestScope as Record<string, unknown>)["container"], "none on scope views either").toBe(undefined);
+    // @ts-expect-error container is not part of the view type
+    void app.container;
+    await requestScope.dispose();
+    await app.dispose();
   });
 
   it("entry names must be valid identifiers, so every entry is dot-accessible", () => {
@@ -272,6 +276,33 @@ describe("named modules (spike)", () => {
     expect(() => createModule("Importer", { uses: [impostor] }, (m) => m.single("x", () => 1))).toThrowError(
       /not a module created by createModule/,
     );
+  });
+
+  it("a structural look-alike with Map-shaped internals is still rejected (identity, not shape)", () => {
+    const lookAlike = {
+      name: "Fake",
+      definitionsByLocalName: new Map(),
+      uses: [],
+      override: () => ({}),
+    } as never;
+    expect(() => createContainer(lookAlike)).toThrowError(/not a module created by createModule/);
+    const overrideLookAlike = { name: "Fake", replacements: new Map() } as never;
+    expect(() => createContainer(overrideLookAlike)).toThrowError(/not a module created by createModule/);
+  });
+
+  it("modules and overrides expose nothing internal: no tokens, no engine module, no wiring", () => {
+    const Mod = createModule("Mod", (m) => m.single("x", () => 1));
+    const asRecord = Mod as unknown as Record<string, unknown>;
+    expect(asRecord["tokenModule"], "engine module must be unreachable").toBe(undefined);
+    expect(asRecord["definitionsByLocalName"], "definitions (and their tokens) must be unreachable").toBe(undefined);
+    expect(asRecord["uses"], "wiring must be unreachable").toBe(undefined);
+    expect(Object.isFrozen(Mod)).toBe(true);
+
+    const Fake = Mod.override((o) => o.with("x", () => 2));
+    const fakeAsRecord = Fake as unknown as Record<string, unknown>;
+    expect(fakeAsRecord["replacements"]).toBe(undefined);
+    expect(fakeAsRecord["target"]).toBe(undefined);
+    expect(Object.isFrozen(Fake)).toBe(true);
   });
 
   it("namespaced accessor objects are frozen", () => {
@@ -402,7 +433,7 @@ describe("named modules (spike)", () => {
     expect(() => Mod.override((o) => o)).toThrowError(/replaces nothing/);
     // duplicate replacement of one entry
     expect(() => Mod.override((o) => o.with("x", () => 1).with("x", () => 2))).toThrowError(
-      /Duplicate accessor name 'x'/,
+      /already replaces entry 'x'/,
     );
     // eager on a non-singleton original
     expect(() => Mod.override((o) => o.with("ctx", () => ({}), { eager: true } as never))).toThrowError(
