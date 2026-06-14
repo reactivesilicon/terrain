@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DIError } from "../../src";
-import { createContainer, createModule, type NamedModule } from "../../src/module-composition/composition";
+import { createContainer, createModule, type ComposedModule } from "../../src/module-composition/composition";
 import { delay, random } from "../helpers";
 
 /**
@@ -61,7 +61,7 @@ describe("stress: named layer random operations", () => {
       };
 
       // ── generate 2-4 modules, each possibly using earlier ones ──
-      const builtModules: NamedModule<string, never>[] = [];
+      const builtModules: ComposedModule<string, never>[] = [];
       const catalog: EntryRecord[] = [];
       const moduleCount = 2 + Math.floor(random() * 3);
 
@@ -122,18 +122,18 @@ describe("stress: named layer random operations", () => {
 
         const module =
           uses.length > 0
-            ? (createModule as never as (n: string, c: unknown, s: unknown) => NamedModule<string, never>)(
+            ? (createModule as never as (n: string, c: unknown, s: unknown) => ComposedModule<string, never>)(
                 moduleName,
                 { uses },
                 setup,
               )
-            : (createModule as never as (n: string, s: unknown) => NamedModule<string, never>)(moduleName, setup);
+            : (createModule as never as (n: string, s: unknown) => ComposedModule<string, never>)(moduleName, setup);
         builtModules.push(module);
         catalog.push(...ownEntries);
       }
 
       // ── random operations against the view ──
-      const app = (createContainer as never as (...m: NamedModule<string, never>[]) => unknown)(...builtModules) as {
+      const app = (createContainer as never as (...m: ComposedModule<string, never>[]) => unknown)(...builtModules) as {
         scope(): Record<string, Record<string, () => unknown>> & { dispose(): Promise<void> };
         start(): Promise<void>;
         dispose(): Promise<void>;

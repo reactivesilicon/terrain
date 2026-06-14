@@ -2,7 +2,7 @@ import { ForeignModuleError } from "../errors";
 import type { Module } from "../module";
 import type { Definition, SingletonDefinitionOptions } from "../types";
 import type { ResolverNamespaces } from "./kernel-definition-transformer";
-import type { ModuleEntryProvider } from "./module-entry-definitions";
+import type { ModuleEntryName, ModuleEntryProvider } from "./module-entry-definitions";
 import type { EntryMap, ModuleOverride, ComposedModule } from "./types";
 
 export type NamespacePrototypes = {
@@ -12,7 +12,7 @@ export type NamespacePrototypes = {
 
 export interface ComposedModuleInternals {
   name: string;
-  definitionsByLocalName: ReadonlyMap<string, Definition<unknown>>;
+  definitionsByEntryName: ReadonlyMap<ModuleEntryName, Definition<unknown>>;
   kernelModule: Module;
   usedModules: readonly ComposedModuleInternals[];
   namespacePrototypes: NamespacePrototypes;
@@ -26,7 +26,7 @@ export interface EntryReplacement {
 
 export interface OverrideInternals {
   targetModule: ComposedModuleInternals;
-  replacementsByLocalName: ReadonlyMap<string, EntryReplacement>;
+  replacementsByEntryName: ReadonlyMap<ModuleEntryName, EntryReplacement>;
 }
 
 const internalsByModule = new WeakMap<ComposedModule<string, EntryMap>, ComposedModuleInternals>();

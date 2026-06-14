@@ -3,10 +3,12 @@ import type { TokenMode } from "../token";
 import type { Lifetime, SingletonDefinitionOptions } from "../types";
 import { isIdentifierName } from "../validations/name-validations";
 
+export type ModuleEntryName = string;
+
 export type ModuleEntryProvider = (resolverNamespaces: object) => unknown;
 
 export interface ModuleEntryDefinition {
-  localName: string;
+  entryName: ModuleEntryName;
   lifetime: Lifetime;
   mode: TokenMode;
   provider: ModuleEntryProvider;
@@ -14,7 +16,7 @@ export interface ModuleEntryDefinition {
 }
 
 export class ModuleEntryDefinitions {
-  readonly #definitionsByLocalName = new Map<string, ModuleEntryDefinition>();
+  readonly #definitionsByEntryName = new Map<ModuleEntryName, ModuleEntryDefinition>();
   readonly #moduleName: string;
 
   constructor(moduleName: string) {
@@ -22,18 +24,18 @@ export class ModuleEntryDefinitions {
   }
 
   register(definition: ModuleEntryDefinition): void {
-    if (!isIdentifierName(definition.localName)) {
-      throw new InvalidEntryNameError(definition.localName, this.#moduleName);
+    if (!isIdentifierName(definition.entryName)) {
+      throw new InvalidEntryNameError(definition.entryName, this.#moduleName);
     }
 
-    if (this.#definitionsByLocalName.has(definition.localName)) {
-      throw new DuplicateEntryNameError(definition.localName, this.#moduleName);
+    if (this.#definitionsByEntryName.has(definition.entryName)) {
+      throw new DuplicateEntryNameError(definition.entryName, this.#moduleName);
     }
 
-    this.#definitionsByLocalName.set(definition.localName, definition);
+    this.#definitionsByEntryName.set(definition.entryName, definition);
   }
 
   registeredDefinitions(): IterableIterator<ModuleEntryDefinition> {
-    return this.#definitionsByLocalName.values();
+    return this.#definitionsByEntryName.values();
   }
 }
