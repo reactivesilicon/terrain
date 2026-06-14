@@ -1,5 +1,6 @@
 /* oxlint-disable no-unused-vars */
 
+import type { Simplify, UnionToIntersection } from "../kernel/types";
 import { type TokenMode, TokenModes } from "../token";
 import type { DefinitionOptions, SingletonDefinitionOptions } from "../types";
 import type { ModuleEntryName } from "./module-entry-definitions";
@@ -29,15 +30,6 @@ type AsyncEntryNamesOf<ModuleEntries extends ModuleEntryMap> = {
 
 type EntryValueOf<ModuleEntries extends ModuleEntryMap, EntryName extends keyof ModuleEntries> =
   ModuleEntries[EntryName] extends ModuleEntry<infer T, TokenMode> ? T : never;
-
-// type UnionToIntersection<U> = (U extends unknown ? (u: U) => void : never) extends (i: infer I) => void ? I : never;
-export type UnionToIntersection<U> = (U extends unknown ? (arg: U) => unknown : never) extends (arg: infer I) => unknown
-  ? I
-  : never;
-
-/** Flattens intersections so hovers read as plain object shapes instead of
- *  ContainerView<...> / generic soup. */
-type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
 export type UsedModules = readonly ComposedModule<ComposedModuleName, ModuleEntryMap>[];
 
