@@ -62,8 +62,11 @@ function makeBuilder(
 
 // ── createModule ────────────────────────────────────────────────────────────
 
+type RuntimeModuleBuilder = ComposedModuleBuilder<ComposedModuleName, UsedModules, ModuleEntryMap>;
+type RuntimeModuleSetup = (composedModuleBuilder: RuntimeModuleBuilder) => unknown;
+
 export function createModule<const ModuleName extends ComposedModuleName, ModuleEntries extends ModuleEntryMap>(
-  name: PascalCase<ModuleName>,
+  moduleName: PascalCase<ModuleName>,
   setup: (
     composedModuleBuilder: ComposedModuleBuilder<ModuleName, readonly [], {}>,
   ) => ComposedModuleBuilder<ModuleName, readonly [], ModuleEntries>,
@@ -73,7 +76,7 @@ export function createModule<
   const Uses extends UsedModules,
   ModuleEntries extends ModuleEntryMap,
 >(
-  name: PascalCase<ModuleName>,
+  moduleName: PascalCase<ModuleName>,
   config: { uses: Uses },
   setup: (
     composedModuleBuilder: ComposedModuleBuilder<ModuleName, Uses, {}>,
@@ -81,8 +84,8 @@ export function createModule<
 ): ComposedModule<ModuleName, ModuleEntries>;
 export function createModule(
   moduleName: string,
-  configOrSetup: { uses: readonly ComposedModule<string, ModuleEntryMap>[] } | ((m: never) => unknown),
-  maybeSetup?: (m: never) => unknown,
+  configOrSetup: { uses: readonly ComposedModule<ComposedModuleName, ModuleEntryMap>[] } | RuntimeModuleSetup,
+  maybeSetup?: RuntimeModuleSetup,
 ): ComposedModule<string, ModuleEntryMap> {
   assertModuleName(moduleName);
 
@@ -92,11 +95,11 @@ export function createModule(
   assertNoNamespaceCollisions(moduleName, usedModuleInternals);
 
   const moduleEntryDefinitions = new ModuleEntryDefinitions(moduleName);
-  setup(makeBuilder(moduleEntryDefinitions) as never);
+  setup(makeBuilder(moduleEntryDefinitions));
 
   // This module's own entries; imports are reached via resolver namespaces.
-  const moduleEntryDefinitionsList = Array.from(moduleEntryDefinitions.registeredDefinitions());
-  const entryDefinitionsWithTokens = moduleEntryDefinitionsList.map((entryDefinition) => {
+  const entryDefinitions = Array.from(moduleEntryDefinitions.registeredDefinitions());
+  const entryDefinitionsWithTokens = entryDefinitions.map((entryDefinition) => {
     const description = `${moduleName}.${entryDefinition.entryName}`;
     const token =
       entryDefinition.mode === TokenModes.Async
