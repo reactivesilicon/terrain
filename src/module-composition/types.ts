@@ -1,0 +1,244 @@
+/* oxlint-disable no-unused-vars */
+
+import { type TokenMode, TokenModes } from "../token";
+import type { DefinitionOptions, SingletonDefinitionOptions } from "../types";
+import type { ModuleEntryName } from "./module-entry-definitions";
+
+// ── type-level model ────────────────────────────────────────────────────────
+// Each named definition contributes one Entry to its module's EntryMap. The
+// map is phantom: it exists so resolvers, accessors, and cross-module imports
+// are typed — the runtime works purely on internally minted tokens.
+
+export type ComposedModuleName = string;
+
+export type ModuleEntry<T, Mode extends TokenMode> = { value: T; mode: Mode };
+export type ModuleEntryMap = Record<string, ModuleEntry<unknown, TokenMode>>;
+
+type ModuleEntryByEntryName<EntryName extends ModuleEntryName, T, Mode extends TokenMode> = {
+  [K in EntryName]: ModuleEntry<T, Mode>;
+};
+
+// ── type-level accessors ─────────────────────────────────────────────────────
+type EntryNamesOf<ModuleEntries extends ModuleEntryMap> = keyof ModuleEntries;
+type SyncEntryNamesOf<ModuleEntries extends ModuleEntryMap> = {
+  [K in keyof ModuleEntries]: ModuleEntries[K] extends ModuleEntry<unknown, typeof TokenModes.Sync> ? K : never;
+}[keyof ModuleEntries];
+type AsyncEntryNamesOf<ModuleEntries extends ModuleEntryMap> = {
+  [K in keyof ModuleEntries]: ModuleEntries[K] extends ModuleEntry<unknown, typeof TokenModes.Async> ? K : never;
+}[keyof ModuleEntries];
+
+type EntryValueOf<ModuleEntries extends ModuleEntryMap, EntryName extends keyof ModuleEntries> =
+  ModuleEntries[EntryName] extends ModuleEntry<infer T, TokenMode> ? T : never;
+
+// type UnionToIntersection<U> = (U extends unknown ? (u: U) => void : never) extends (i: infer I) => void ? I : never;
+export type UnionToIntersection<U> = (U extends unknown ? (arg: U) => unknown : never) extends (arg: infer I) => unknown
+  ? I
+  : never;
+
+/** Flattens intersections so hovers read as plain object shapes instead of
+ *  ContainerView<...> / generic soup. */
+type Simplify<T> = { [K in keyof T]: T[K] } & {};
+
+export type UsedModules = readonly ComposedModule<ComposedModuleName, ModuleEntryMap>[];
+
+// ── accessors ──────────────────────────────────────────────────────────────
+export type ModuleAccessorsOf<ModuleEntries extends ModuleEntryMap> = Simplify<
+  SyncModuleAccessorsOf<ModuleEntries> & AsyncModuleAccessorsOf<ModuleEntries>
+>;
+
+type SyncModuleAccessorsOf<ModuleEntries extends ModuleEntryMap> = {
+  readonly [EntryName in SyncEntryNamesOf<ModuleEntries>]: () => EntryValueOf<ModuleEntries, EntryName>;
+};
+
+type AsyncModuleAccessorsOf<ModuleEntries extends ModuleEntryMap> = {
+  readonly [EntryName in AsyncEntryNamesOf<ModuleEntries>]: () => Promise<EntryValueOf<ModuleEntries, EntryName>>;
+};
+
+// ── namespaces ─────────────────────────────────────────────────────────────
+type NamespaceOf<Module> =
+  Module extends ComposedModule<infer ModuleName, infer ModuleEntries>
+    ? { readonly [K in ModuleName]: ModuleAccessorsOf<ModuleEntries> }
+    : never;
+
+type SyncNamespaceOf<Module> =
+  Module extends ComposedModule<infer ModuleName, infer ModuleEntries>
+    ? { readonly [K in ModuleName]: SyncModuleAccessorsOf<ModuleEntries> }
+    : never;
+
+type AsyncNamespaceOf<Module> =
+  Module extends ComposedModule<infer ModuleName, infer ModuleEntries>
+    ? { readonly [K in ModuleName]: AsyncModuleAccessorsOf<ModuleEntries> }
+    : never;
+
+// ── import namespaces ───────────────────────────────────────────────────────
+type ImportNamespaces<Uses extends UsedModules> = Uses extends readonly []
+  ? {}
+  : UnionToIntersection<NamespaceOf<Uses[number]>>;
+
+type SyncImportNamespaces<Uses extends UsedModules> = Uses extends readonly []
+  ? {}
+  : UnionToIntersection<SyncNamespaceOf<Uses[number]>>;
+
+type AsyncImportNamespaces<Uses extends UsedModules> = Uses extends readonly []
+  ? {}
+  : UnionToIntersection<AsyncNamespaceOf<Uses[number]>>;
+
+// ── builder ─────────────────────────────────────────────────────────────────
+
+// The resolver is namespaces all the way down: imported modules under their
+// names, and the module's own earlier entries under ITS name — one uniform
+// call shape, identical to the container view.
+type SyncProviderResolver<
+  ModuleName extends ComposedModuleName,
+  Uses extends UsedModules,
+  ModuleEntries extends ModuleEntryMap,
+> = SyncImportNamespaces<Uses> & { readonly [K in ModuleName]: SyncModuleAccessorsOf<ModuleEntries> };
+
+type AsyncProviderResolver<
+  ModuleName extends ComposedModuleName,
+  Uses extends UsedModules,
+  ModuleEntries extends ModuleEntryMap,
+> = ImportNamespaces<Uses> & { readonly [K in ModuleName]: ModuleAccessorsOf<ModuleEntries> };
+
+export interface ComposedModuleBuilder<
+  ModuleName extends ComposedModuleName,
+  Uses extends UsedModules,
+  ModuleEntries extends ModuleEntryMap,
+> {
+  single<const EntryName extends ModuleEntryName, T>(
+    entryName: EntryName,
+    provider: (r: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
+    options?: SingletonDefinitionOptions<T>,
+  ): ComposedModuleBuilder<
+    ModuleName,
+    Uses,
+    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Sync>
+  >;
+
+  singleAsync<const EntryName extends ModuleEntryName, T>(
+    entryName: EntryName,
+    provider: (r: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
+    options?: SingletonDefinitionOptions<T>,
+  ): ComposedModuleBuilder<
+    ModuleName,
+    Uses,
+    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Async>
+  >;
+
+  factory<const EntryName extends ModuleEntryName, T>(
+    entryName: EntryName,
+    provider: (r: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
+    options?: DefinitionOptions<T>,
+  ): ComposedModuleBuilder<
+    ModuleName,
+    Uses,
+    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Sync>
+  >;
+
+  factoryAsync<const EntryName extends ModuleEntryName, T>(
+    entryName: EntryName,
+    provider: (r: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
+    options?: DefinitionOptions<T>,
+  ): ComposedModuleBuilder<
+    ModuleName,
+    Uses,
+    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Async>
+  >;
+
+  scoped<const EntryName extends ModuleEntryName, T>(
+    entryName: EntryName,
+    provider: (r: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
+    options?: DefinitionOptions<T>,
+  ): ComposedModuleBuilder<
+    ModuleName,
+    Uses,
+    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Sync>
+  >;
+
+  scopedAsync<const EntryName extends ModuleEntryName, T>(
+    entryName: EntryName,
+    provider: (r: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
+    options?: DefinitionOptions<T>,
+  ): ComposedModuleBuilder<
+    ModuleName,
+    Uses,
+    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Async>
+  >;
+}
+
+declare const COMPOSED_MODULE_BRAND: unique symbol;
+declare const OVERRIDE_BRAND: unique symbol;
+
+/** Replaces providers (and their options) of entries on the module it was
+ *  derived from — entry names, value types, and modes are all checked against
+ *  the original. Lifetime is inherited; consumers resolve the replacement
+ *  transparently because the original's internal tokens are reused. */
+export interface ModuleOverride<ModuleName extends ComposedModuleName> {
+  readonly [OVERRIDE_BRAND]: true;
+  readonly name: ModuleName;
+}
+
+/** Override providers may resolve the module's OTHER entries (Omit of the one
+ *  being replaced); the original's imports are reachable at runtime but not
+ *  typed here — fakes are expected to be self-contained. */
+export interface OverrideBuilder<ModuleName extends ComposedModuleName, ModuleEntries extends ModuleEntryMap> {
+  with<EntryName extends SyncEntryNamesOf<ModuleEntries> & ModuleEntryName>(
+    entryName: EntryName,
+    provider: (
+      r: SyncProviderResolver<ModuleName, readonly [], Omit<ModuleEntries, EntryName>>,
+    ) => EntryValueOf<ModuleEntries, EntryName>,
+    options?: SingletonDefinitionOptions<EntryValueOf<ModuleEntries, EntryName>>,
+  ): OverrideBuilder<ModuleName, ModuleEntries>;
+  withAsync<EntryName extends AsyncEntryNamesOf<ModuleEntries> & ModuleEntryName>(
+    entryName: EntryName,
+    provider: (
+      r: AsyncProviderResolver<ModuleName, readonly [], Omit<ModuleEntries, EntryName>>,
+    ) => Promise<EntryValueOf<ModuleEntries, EntryName>>,
+    options?: SingletonDefinitionOptions<EntryValueOf<ModuleEntries, EntryName>>,
+  ): OverrideBuilder<ModuleName, ModuleEntries>;
+}
+
+export interface ComposedModule<ModuleName extends ComposedModuleName, ModuleEntries extends ModuleEntryMap> {
+  readonly [COMPOSED_MODULE_BRAND]: true;
+  readonly name: ModuleName;
+  /** Phantom — carries the entry map for resolver/accessor/import typing. */
+  readonly __entries?: ModuleEntries;
+  override(
+    build: (o: OverrideBuilder<ModuleName, ModuleEntries>) => OverrideBuilder<ModuleName, ModuleEntries>,
+  ): ModuleOverride<ModuleName>;
+}
+
+/** What createContainer accepts: modules (exposed as namespaces) and module
+ *  overrides (rewire only), mixed in one list. */
+export type ContainerPart = ComposedModule<ComposedModuleName, ModuleEntryMap> | ModuleOverride<ComposedModuleName>;
+
+export type Namespaces<Parts extends readonly ContainerPart[]> = UnionToIntersection<NamespaceOf<Parts[number]>>;
+
+/** No-arg: a child scope view you dispose() yourself. Callback: the scope is
+ *  created, handed to the work, and ALWAYS disposed afterwards (the engine's
+ *  withScope semantics — body errors preserved, both-fail aggregated). */
+export interface ScopeMethod<Parts extends readonly ContainerPart[]> {
+  (): ScopeView<Parts>;
+  <T>(work: (view: ScopeView<Parts>) => T | Promise<T>): Promise<T>;
+}
+
+export type ContainerView<Parts extends readonly ContainerPart[]> = Simplify<
+  Namespaces<Parts> & {
+    scope: ScopeMethod<Parts>;
+    start(): Promise<void>;
+    dispose(): Promise<void>;
+  }
+>;
+
+export type ScopeView<Parts extends readonly ContainerPart[]> = Simplify<
+  Namespaces<Parts> & {
+    /** Scopes nest: a request scope can open transaction sub-scopes. */
+    scope: ScopeMethod<Parts>;
+    dispose(): Promise<void>;
+  }
+>;
+
+/** Module names must be PascalCase. The container view's API (scope, start,
+ *  dispose — and anything added later) is lowercase, so namespaces and
+ *  methods can never collide, with no reserved-word list to maintain. */
+export type PascalCase<Name extends string> = Name extends Capitalize<Name> ? Name : never;
