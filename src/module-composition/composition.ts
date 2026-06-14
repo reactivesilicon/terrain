@@ -80,24 +80,24 @@ export function createModule<
   ) => ComposedModuleBuilder<ModuleName, Uses, ModuleEntries>,
 ): ComposedModule<ModuleName, ModuleEntries>;
 export function createModule(
-  name: string,
+  moduleName: string,
   configOrSetup: { uses: readonly ComposedModule<string, ModuleEntryMap>[] } | ((m: never) => unknown),
   maybeSetup?: (m: never) => unknown,
 ): ComposedModule<string, ModuleEntryMap> {
-  assertModuleName(name);
+  assertModuleName(moduleName);
 
   const usedModuleInternals = typeof configOrSetup === "function" ? [] : configOrSetup.uses.map(requireModuleInternals);
   const setup = (typeof configOrSetup === "function" ? configOrSetup : maybeSetup)!;
 
-  assertNoNamespaceCollisions(name, usedModuleInternals);
+  assertNoNamespaceCollisions(moduleName, usedModuleInternals);
 
-  const moduleEntryDefinitions = new ModuleEntryDefinitions(name);
+  const moduleEntryDefinitions = new ModuleEntryDefinitions(moduleName);
   setup(makeBuilder(moduleEntryDefinitions) as never);
 
   // This module's own entries; imports are reached via resolver namespaces.
   const moduleEntryDefinitionsList = Array.from(moduleEntryDefinitions.registeredDefinitions());
   const entryDefinitionsWithTokens = moduleEntryDefinitionsList.map((entryDefinition) => {
-    const description = `${name}.${entryDefinition.entryName}`;
+    const description = `${moduleName}.${entryDefinition.entryName}`;
     const token =
       entryDefinition.mode === TokenModes.Async
         ? createAsyncToken<unknown>(description)
@@ -112,7 +112,7 @@ export function createModule(
   const namespacePrototypes = buildNamespacePrototypes(tokensByEntryName);
 
   const buildProviderResolverNamespaces = createResolverNamespaceBuilder(
-    name,
+    moduleName,
     usedModuleInternals,
     namespacePrototypes,
   );
@@ -134,12 +134,12 @@ export function createModule(
       ),
     );
   }
-  const kernelModule = createKernelModule((m) => {
-    for (const definition of definitionsByEntryName.values()) m.define(definition);
+  const kernelModule = createKernelModule((moduleBuilder) => {
+    for (const definition of definitionsByEntryName.values()) moduleBuilder.define(definition);
   });
 
   const moduleInternals: ComposedModuleInternals = {
-    name: name,
+    name: moduleName,
     definitionsByEntryName: definitionsByEntryName,
     kernelModule: kernelModule,
     usedModules: usedModuleInternals,
@@ -148,9 +148,9 @@ export function createModule(
   };
 
   const module = {
-    name,
+    name: moduleName,
     override: (defineOverride: (overrideBuilder: unknown) => unknown): ModuleOverride<string> => {
-      return buildModuleOverride(name, definitionsByEntryName, moduleInternals, defineOverride);
+      return buildModuleOverride(moduleName, definitionsByEntryName, moduleInternals, defineOverride);
     },
   } as unknown as ComposedModule<string, ModuleEntryMap>;
   Object.freeze(module);
@@ -178,7 +178,9 @@ export function createContainer<const Parts extends readonly ContainerPart[]>(..
   }
 
   const container = new Container();
-  for (const module of wiring) container.load(module.kernelModule);
+  for (const wiringModule of wiring) {
+    container.load(wiringModule.kernelModule);
+  }
   for (const override of overrides) {
     container.load(buildOverrideKernelModule(override), { override: true });
   }
