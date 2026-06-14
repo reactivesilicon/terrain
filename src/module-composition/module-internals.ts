@@ -3,7 +3,7 @@ import type { Module } from "../module";
 import type { Definition, SingletonDefinitionOptions } from "../types";
 import type { ResolverNamespaces } from "./kernel-definition-transformer";
 import type { ModuleEntryName, ModuleEntryProvider } from "./module-entry-definitions";
-import type { EntryMap, ModuleOverride, ComposedModule } from "./types";
+import type { ModuleEntryMap, ModuleOverride, ComposedModule } from "./types";
 
 export type NamespacePrototypes = {
   readonly full: object;
@@ -29,17 +29,17 @@ export interface OverrideInternals {
   replacementsByEntryName: ReadonlyMap<ModuleEntryName, EntryReplacement>;
 }
 
-const internalsByModule = new WeakMap<ComposedModule<string, EntryMap>, ComposedModuleInternals>();
+const internalsByModule = new WeakMap<ComposedModule<string, ModuleEntryMap>, ComposedModuleInternals>();
 const internalsByOverride = new WeakMap<ModuleOverride<string>, OverrideInternals>();
 
 export function storeModuleInternals(
-  module: ComposedModule<string, EntryMap>,
+  module: ComposedModule<string, ModuleEntryMap>,
   internals: ComposedModuleInternals,
 ): void {
   internalsByModule.set(module, internals);
 }
 
-export function requireModuleInternals(module: ComposedModule<string, EntryMap>): ComposedModuleInternals {
+export function requireModuleInternals(module: ComposedModule<string, ModuleEntryMap>): ComposedModuleInternals {
   const internals = internalsByModule.get(module);
   if (!internals) {
     throw new ForeignModuleError();
