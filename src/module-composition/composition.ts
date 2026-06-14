@@ -95,15 +95,19 @@ export function createModule(
   setup(makeBuilder(moduleEntryDefinitions) as never);
 
   // This module's own entries; imports are reached via resolver namespaces.
-  const tokensByEntryName = new Map<ModuleEntryName, AnyToken<unknown>>();
-  for (const definition of moduleEntryDefinitions.registeredDefinitions()) {
-    const description = `${name}.${definition.entryName}`;
+  const moduleEntryDefinitionsList = Array.from(moduleEntryDefinitions.registeredDefinitions());
+  const entryDefinitionsWithTokens = moduleEntryDefinitionsList.map((entryDefinition) => {
+    const description = `${name}.${entryDefinition.entryName}`;
     const token =
-      definition.mode === TokenModes.Async
+      entryDefinition.mode === TokenModes.Async
         ? createAsyncToken<unknown>(description)
         : createSyncToken<unknown>(description);
-    tokensByEntryName.set(definition.entryName, token);
-  }
+    return { entryDefinition, token };
+  });
+
+  const tokensByEntryName = new Map<ModuleEntryName, AnyToken<unknown>>(
+    entryDefinitionsWithTokens.map(({ entryDefinition, token }) => [entryDefinition.entryName, token]),
+  );
 
   const namespacePrototypes = buildNamespacePrototypes(tokensByEntryName);
 
@@ -114,20 +118,19 @@ export function createModule(
   );
 
   const definitionsByEntryName = new Map<ModuleEntryName, Definition<unknown>>();
-  for (const definition of moduleEntryDefinitions.registeredDefinitions()) {
-    const token = tokensByEntryName.get(definition.entryName)!;
+  for (const { entryDefinition, token } of entryDefinitionsWithTokens) {
     const kernelDefinitionInput: KernelDefinitionInput = {
       token: token,
-      lifetime: definition.lifetime,
-      async: definition.mode === TokenModes.Async,
+      lifetime: entryDefinition.lifetime,
+      async: entryDefinition.mode === TokenModes.Async,
     };
     definitionsByEntryName.set(
-      definition.entryName,
+      entryDefinition.entryName,
       toKernelDefinition(
         kernelDefinitionInput,
         buildProviderResolverNamespaces,
-        definition.provider,
-        definition.options ?? {},
+        entryDefinition.provider,
+        entryDefinition.options ?? {},
       ),
     );
   }
