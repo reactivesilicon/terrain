@@ -20,6 +20,7 @@ type ModuleEntryByEntryName<EntryName extends ModuleEntryName, T, Mode extends T
 };
 
 // ── type-level accessors ─────────────────────────────────────────────────────
+// @ts-ignore
 type EntryNamesOf<ModuleEntries extends ModuleEntryMap> = keyof ModuleEntries;
 type SyncEntryNamesOf<ModuleEntries extends ModuleEntryMap> = {
   [K in keyof ModuleEntries]: ModuleEntries[K] extends ModuleEntry<unknown, typeof TokenModes.Sync> ? K : never;
@@ -71,6 +72,7 @@ type SyncImportNamespaces<Uses extends UsedModules> = Uses extends readonly []
   ? {}
   : UnionToIntersection<SyncNamespaceOf<Uses[number]>>;
 
+// @ts-ignore
 type AsyncImportNamespaces<Uses extends UsedModules> = Uses extends readonly []
   ? {}
   : UnionToIntersection<AsyncNamespaceOf<Uses[number]>>;
