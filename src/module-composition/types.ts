@@ -185,14 +185,14 @@ export interface OverrideBuilder<ModuleName extends ComposedModuleName, ModuleEn
   with<EntryName extends SyncEntryNamesOf<ModuleEntries> & ModuleEntryName>(
     entryName: EntryName,
     provider: (
-      r: SyncProviderResolver<ModuleName, readonly [], Omit<ModuleEntries, EntryName>>,
+      resolver: SyncProviderResolver<ModuleName, readonly [], Omit<ModuleEntries, EntryName>>,
     ) => EntryValueOf<ModuleEntries, EntryName>,
     options?: SingletonDefinitionOptions<EntryValueOf<ModuleEntries, EntryName>>,
   ): OverrideBuilder<ModuleName, ModuleEntries>;
   withAsync<EntryName extends AsyncEntryNamesOf<ModuleEntries> & ModuleEntryName>(
     entryName: EntryName,
     provider: (
-      r: AsyncProviderResolver<ModuleName, readonly [], Omit<ModuleEntries, EntryName>>,
+      resolver: AsyncProviderResolver<ModuleName, readonly [], Omit<ModuleEntries, EntryName>>,
     ) => Promise<EntryValueOf<ModuleEntries, EntryName>>,
     options?: SingletonDefinitionOptions<EntryValueOf<ModuleEntries, EntryName>>,
   ): OverrideBuilder<ModuleName, ModuleEntries>;
