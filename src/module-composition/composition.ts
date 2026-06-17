@@ -9,12 +9,19 @@
 import { Container } from "../container/container";
 import { InvalidModuleUseError } from "../errors";
 import { createModule as createKernelModule } from "../module";
-import { type AnyToken, createAsyncToken, createSyncToken, type TokenMode, TokenModes } from "../token";
+import { type AnyToken, TokenModes } from "../token";
 import { type Definition, type Lifetime, Lifetimes, type SingletonDefinitionOptions } from "../types";
 import { assertModuleName } from "../validations/name-validations";
 import { buildContainerView } from "./container-views";
-import { type KernelDefinitionInput, toKernelDefinition } from "./kernel-definition-transformer";
-import { ModuleEntryDefinitions, type ModuleEntryName, type ModuleEntryProvider } from "./module-entry-definitions";
+import { toKernelDefinition } from "./kernel-definition-transformer";
+import {
+  type AsyncModuleEntryProvider,
+  bundleModuleEntryDefinitionWithToken,
+  ModuleEntryDefinitions,
+  type ModuleEntryDefinitionWithToken,
+  type ModuleEntryName,
+  type SyncModuleEntryProvider,
+} from "./module-entry-definitions";
 import {
   type ComposedModuleInternals,
   findOverrideInternals,
@@ -42,20 +49,39 @@ export * from "./types";
 function makeBuilder(
   moduleEntryDefinitions: ModuleEntryDefinitions,
 ): ComposedModuleBuilder<string, UsedModules, ModuleEntryMap> {
-  const add =
-    (lifetime: Lifetime, mode: TokenMode) =>
-    (entryName: string, provider: ModuleEntryProvider, options?: SingletonDefinitionOptions<unknown>) => {
-      moduleEntryDefinitions.register({ entryName, lifetime, mode, provider, options });
+  const addSync =
+    (lifetime: Lifetime) =>
+    (entryName: ModuleEntryName, provider: SyncModuleEntryProvider, options?: SingletonDefinitionOptions<unknown>) => {
+      moduleEntryDefinitions.register({
+        entryName: entryName,
+        lifetime: lifetime,
+        mode: TokenModes.Sync,
+        provider: provider,
+        options: options,
+      });
+      return builder;
+    };
+
+  const addAsync =
+    (lifetime: Lifetime) =>
+    (entryName: ModuleEntryName, provider: AsyncModuleEntryProvider, options?: SingletonDefinitionOptions<unknown>) => {
+      moduleEntryDefinitions.register({
+        entryName: entryName,
+        lifetime: lifetime,
+        mode: TokenModes.Async,
+        provider: provider,
+        options: options,
+      });
       return builder;
     };
 
   const builder = {
-    single: add(Lifetimes.Singleton, TokenModes.Sync),
-    singleAsync: add(Lifetimes.Singleton, TokenModes.Async),
-    factory: add(Lifetimes.Factory, TokenModes.Sync),
-    factoryAsync: add(Lifetimes.Factory, TokenModes.Async),
-    scoped: add(Lifetimes.Scoped, TokenModes.Sync),
-    scopedAsync: add(Lifetimes.Scoped, TokenModes.Async),
+    single: addSync(Lifetimes.Singleton),
+    singleAsync: addAsync(Lifetimes.Singleton),
+    factory: addSync(Lifetimes.Factory),
+    factoryAsync: addAsync(Lifetimes.Factory),
+    scoped: addSync(Lifetimes.Scoped),
+    scopedAsync: addAsync(Lifetimes.Scoped),
   } as unknown as ComposedModuleBuilder<string, UsedModules, ModuleEntryMap>;
   return builder;
 }
@@ -97,19 +123,11 @@ export function createModule(
   const moduleEntryDefinitions = new ModuleEntryDefinitions(moduleName);
   setup(makeBuilder(moduleEntryDefinitions));
 
-  // This module's own entries; imports are reached via resolver namespaces.
   const entryDefinitions = Array.from(moduleEntryDefinitions.registeredDefinitions());
-  const entryDefinitionsWithTokens = entryDefinitions.map((entryDefinition) => {
-    const description = `${moduleName}.${entryDefinition.entryName}`;
-    const token =
-      entryDefinition.mode === TokenModes.Async
-        ? createAsyncToken<unknown>(description)
-        : createSyncToken<unknown>(description);
-    return { entryDefinition, token };
-  });
+  const entryDefinitionsWithTokens = entryDefinitions.map(bundleModuleEntryDefinitionWithToken.bind(null, moduleName));
 
   const tokensByEntryName = new Map<ModuleEntryName, AnyToken<unknown>>(
-    entryDefinitionsWithTokens.map(({ entryDefinition, token }) => [entryDefinition.entryName, token]),
+    entryDefinitionsWithTokens.map(({ token, entryName }) => [entryName, token]),
   );
 
   const namespacePrototypes = buildNamespacePrototypes(tokensByEntryName);
@@ -121,20 +139,12 @@ export function createModule(
   );
 
   const definitionsByEntryName = new Map<ModuleEntryName, Definition<unknown>>();
-  for (const { entryDefinition, token } of entryDefinitionsWithTokens) {
-    const kernelDefinitionInput: KernelDefinitionInput = {
-      token: token,
-      lifetime: entryDefinition.lifetime,
-      async: entryDefinition.mode === TokenModes.Async,
-    };
+  const entryDefinitionsByEntryName = new Map<ModuleEntryName, ModuleEntryDefinitionWithToken>();
+  for (const entryDefinitionWithToken of entryDefinitionsWithTokens) {
+    entryDefinitionsByEntryName.set(entryDefinitionWithToken.entryName, entryDefinitionWithToken);
     definitionsByEntryName.set(
-      entryDefinition.entryName,
-      toKernelDefinition(
-        kernelDefinitionInput,
-        buildProviderResolverNamespaces,
-        entryDefinition.provider,
-        entryDefinition.options ?? {},
-      ),
+      entryDefinitionWithToken.entryName,
+      toKernelDefinition(entryDefinitionWithToken, buildProviderResolverNamespaces),
     );
   }
   const kernelModule = createKernelModule((moduleBuilder) => {
@@ -144,6 +154,7 @@ export function createModule(
   const moduleInternals: ComposedModuleInternals = {
     name: moduleName,
     definitionsByEntryName: definitionsByEntryName,
+    entryDefinitionsByEntryName: entryDefinitionsByEntryName,
     kernelModule: kernelModule,
     usedModules: usedModuleInternals,
     namespacePrototypes: namespacePrototypes,
@@ -153,7 +164,7 @@ export function createModule(
   const module = {
     name: moduleName,
     override: (defineOverride: (overrideBuilder: unknown) => unknown): ModuleOverride<string> => {
-      return buildModuleOverride(moduleName, definitionsByEntryName, moduleInternals, defineOverride);
+      return buildModuleOverride(moduleName, entryDefinitionsByEntryName, moduleInternals, defineOverride);
     },
   } as unknown as ComposedModule<string, ModuleEntryMap>;
   Object.freeze(module);

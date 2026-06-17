@@ -1,34 +1,56 @@
-import type { AnyToken } from "../token";
-import type { AsyncResolver, Definition, Lifetime, SingletonDefinitionOptions, SyncResolver } from "../types";
-import type { ModuleEntryProvider } from "./module-entry-definitions";
+import { TokenModes } from "../token";
+import {
+  type AsyncResolver,
+  type Definition,
+  Lifetimes,
+  type SingletonDefinitionOptions,
+  type SyncResolver,
+} from "../types";
+import type { ModuleEntryDefinitionWithToken } from "./module-entry-definitions";
 
 export type ResolverNamespaces = {
   (resolver: SyncResolver, includesAsyncEntries: false): Record<string, unknown>;
   (resolver: AsyncResolver, includesAsyncEntries: true): Record<string, unknown>;
 };
 
-export type KernelDefinitionInput = {
-  token: AnyToken<unknown>;
-  lifetime: Lifetime;
-  async: boolean;
-};
+function singletonDefinitionOptions(options: SingletonDefinitionOptions<unknown> | undefined) {
+  return {
+    ...(options?.dispose ? { dispose: options.dispose } : {}),
+    ...(options?.eager ? { eager: true } : {}),
+  };
+}
+
+function nonSingletonDefinitionOptions(options: SingletonDefinitionOptions<unknown> | undefined) {
+  return options?.dispose ? { dispose: options.dispose } : {};
+}
 
 export function toKernelDefinition(
-  kernelDefinitionInput: KernelDefinitionInput,
+  entryDefinition: ModuleEntryDefinitionWithToken,
   resolverNamespaces: ResolverNamespaces,
-  moduleEntryProvider: ModuleEntryProvider,
-  options: SingletonDefinitionOptions<unknown>,
 ): Definition<unknown> {
-  const provider = kernelDefinitionInput.async
-    ? (resolver: AsyncResolver) => moduleEntryProvider(resolverNamespaces(resolver, true))
-    : (resolver: SyncResolver) => moduleEntryProvider(resolverNamespaces(resolver, false));
+  const options =
+    entryDefinition.lifetime === Lifetimes.Singleton
+      ? { lifetime: entryDefinition.lifetime, ...singletonDefinitionOptions(entryDefinition.options) }
+      : { lifetime: entryDefinition.lifetime, ...nonSingletonDefinitionOptions(entryDefinition.options) };
 
-  return {
-    token: kernelDefinitionInput.token,
-    lifetime: kernelDefinitionInput.lifetime,
-    async: kernelDefinitionInput.async,
-    provider: provider,
-    ...(options.dispose ? { dispose: options.dispose } : {}),
-    ...(options.eager ? { eager: true } : {}),
-  } as Definition<unknown>; // TODO: check types with satisfies and remove assertion
+  switch (entryDefinition.mode) {
+    case TokenModes.Sync: {
+      const provider = (resolver: SyncResolver) => entryDefinition.provider(resolverNamespaces(resolver, false));
+      return {
+        token: entryDefinition.token,
+        async: false,
+        provider: provider,
+        ...options,
+      } satisfies Definition<unknown>;
+    }
+    case TokenModes.Async: {
+      const provider = (resolver: AsyncResolver) => entryDefinition.provider(resolverNamespaces(resolver, true));
+      return {
+        token: entryDefinition.token,
+        async: true,
+        provider: provider,
+        ...options,
+      } satisfies Definition<unknown>;
+    }
+  }
 }

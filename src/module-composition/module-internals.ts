@@ -1,9 +1,15 @@
 import { ForeignModuleError } from "../errors";
 import type { Module } from "../module";
+import { TokenModes } from "../token";
 import type { Definition, SingletonDefinitionOptions } from "../types";
 import type { ResolverNamespaces } from "./kernel-definition-transformer";
-import type { ModuleEntryName, ModuleEntryProvider } from "./module-entry-definitions";
-import type { ModuleEntryMap, ModuleOverride, ComposedModule } from "./types";
+import type {
+  AsyncModuleEntryProvider,
+  ModuleEntryDefinitionWithToken,
+  ModuleEntryName,
+  SyncModuleEntryProvider,
+} from "./module-entry-definitions";
+import type { ComposedModule, ModuleEntryMap, ModuleOverride } from "./types";
 
 export type NamespacePrototypes = {
   readonly full: object;
@@ -13,16 +19,24 @@ export type NamespacePrototypes = {
 export interface ComposedModuleInternals {
   name: string;
   definitionsByEntryName: ReadonlyMap<ModuleEntryName, Definition<unknown>>;
+  entryDefinitionsByEntryName: ReadonlyMap<ModuleEntryName, ModuleEntryDefinitionWithToken>;
   kernelModule: Module;
   usedModules: readonly ComposedModuleInternals[];
   namespacePrototypes: NamespacePrototypes;
   buildProviderResolverNamespaces: ResolverNamespaces;
 }
 
-export interface EntryReplacement {
-  provider: ModuleEntryProvider;
-  options: SingletonDefinitionOptions<unknown> | undefined;
-}
+export type EntryReplacement =
+  | {
+      mode: typeof TokenModes.Sync;
+      provider: SyncModuleEntryProvider;
+      options: SingletonDefinitionOptions<unknown> | undefined;
+    }
+  | {
+      mode: typeof TokenModes.Async;
+      provider: AsyncModuleEntryProvider;
+      options: SingletonDefinitionOptions<unknown> | undefined;
+    };
 
 export interface OverrideInternals {
   targetModule: ComposedModuleInternals;

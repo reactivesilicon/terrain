@@ -1,9 +1,14 @@
 import { InvalidModuleUseError } from "../errors";
-import { createModule as createTokenModule, type Module } from "../module";
-import { type TokenMode, TokenModes } from "../token";
-import { type Definition, Lifetimes, type SingletonDefinitionOptions } from "../types";
+import { createModule as createKernelModule, type Module } from "../module";
+import { TokenModes } from "../token";
+import { Lifetimes, type SingletonDefinitionOptions } from "../types";
 import { toKernelDefinition } from "./kernel-definition-transformer";
-import type { ModuleEntryName, ModuleEntryProvider } from "./module-entry-definitions";
+import type {
+  AsyncModuleEntryProvider,
+  ModuleEntryDefinitionWithToken,
+  ModuleEntryName,
+  SyncModuleEntryProvider,
+} from "./module-entry-definitions";
 import {
   type ComposedModuleInternals,
   type EntryReplacement,
@@ -14,50 +19,78 @@ import type { ModuleOverride } from "./types";
 
 export function buildModuleOverride(
   moduleName: string,
-  definitionsByEntryName: ReadonlyMap<ModuleEntryName, Definition<unknown>>,
+  entryDefinitionsByEntryName: ReadonlyMap<ModuleEntryName, ModuleEntryDefinitionWithToken>,
   moduleInternals: ComposedModuleInternals,
   defineOverride: (overrideBuilder: unknown) => unknown,
 ): ModuleOverride<string> {
   const replacementsByEntryName = new Map<ModuleEntryName, EntryReplacement>();
 
-  const collectReplacement = (
+  const collectSyncReplacement = (
     entryName: ModuleEntryName,
-    expectedMode: TokenMode,
-    provider: ModuleEntryProvider,
+    provider: SyncModuleEntryProvider,
     options?: SingletonDefinitionOptions<unknown>,
   ) => {
-    const original = definitionsByEntryName.get(entryName);
-    // Runtime backstops; the typed surface makes these unwritable.
+    const original = entryDefinitionsByEntryName.get(entryName);
     if (!original) {
       throw new InvalidModuleUseError(`Override targets unknown entry '${entryName}' in module '${moduleName}'.`);
     }
-    const mode = original.async ? TokenModes.Async : TokenModes.Sync;
-    if (mode !== expectedMode) {
+    if (original.mode !== TokenModes.Sync) {
       throw new InvalidModuleUseError(
-        `Entry '${moduleName}.${entryName}' is ${mode}; use the matching override method.`,
+        `Entry '${moduleName}.${entryName}' is ${original.mode}; use the matching override method.`,
       );
     }
     if (replacementsByEntryName.has(entryName)) {
       throw new InvalidModuleUseError(`Override of module '${moduleName}' already replaces entry '${entryName}'.`);
     }
-    const opts = options as SingletonDefinitionOptions<unknown> | undefined;
-    if (opts?.eager && original.lifetime !== Lifetimes.Singleton) {
+    if (options?.eager && original.lifetime !== Lifetimes.Singleton) {
       throw new InvalidModuleUseError(
         `Override of '${moduleName}.${entryName}' cannot be eager: the original is ${original.lifetime}, not a singleton.`,
       );
     }
-    replacementsByEntryName.set(entryName, { provider, options: opts });
+
+    replacementsByEntryName.set(entryName, { mode: TokenModes.Sync, provider, options });
+    return overrideBuilder;
+  };
+
+  const collectAsyncReplacement = (
+    entryName: ModuleEntryName,
+    provider: AsyncModuleEntryProvider,
+    options?: SingletonDefinitionOptions<unknown>,
+  ) => {
+    const original = entryDefinitionsByEntryName.get(entryName);
+    if (!original) {
+      throw new InvalidModuleUseError(`Override targets unknown entry '${entryName}' in module '${moduleName}'.`);
+    }
+    if (original.mode !== TokenModes.Async) {
+      throw new InvalidModuleUseError(
+        `Entry '${moduleName}.${entryName}' is ${original.mode}; use the matching override method.`,
+      );
+    }
+    if (replacementsByEntryName.has(entryName)) {
+      throw new InvalidModuleUseError(`Override of module '${moduleName}' already replaces entry '${entryName}'.`);
+    }
+    if (options?.eager && original.lifetime !== Lifetimes.Singleton) {
+      throw new InvalidModuleUseError(
+        `Override of '${moduleName}.${entryName}' cannot be eager: the original is ${original.lifetime}, not a singleton.`,
+      );
+    }
+
+    replacementsByEntryName.set(entryName, { mode: TokenModes.Async, provider, options });
     return overrideBuilder;
   };
 
   const overrideBuilder = {
-    with: (entryName: ModuleEntryName, provider: ModuleEntryProvider, options?: SingletonDefinitionOptions<unknown>) =>
-      collectReplacement(entryName, TokenModes.Sync, provider, options),
+    with: (
+      entryName: ModuleEntryName,
+      provider: SyncModuleEntryProvider,
+      options?: SingletonDefinitionOptions<unknown>,
+    ) => collectSyncReplacement(entryName, provider, options),
+
     withAsync: (
       entryName: ModuleEntryName,
-      provider: ModuleEntryProvider,
+      provider: AsyncModuleEntryProvider,
       options?: SingletonDefinitionOptions<unknown>,
-    ) => collectReplacement(entryName, TokenModes.Async, provider, options),
+    ) => collectAsyncReplacement(entryName, provider, options),
   };
 
   defineOverride(overrideBuilder);
@@ -72,17 +105,28 @@ export function buildModuleOverride(
 
 export function buildOverrideKernelModule(override: OverrideInternals): Module {
   const { targetModule, replacementsByEntryName } = override;
-  return createTokenModule((kernelModuleBuilder) => {
+  return createKernelModule((kernelModuleBuilder) => {
     for (const [entryName, replacement] of replacementsByEntryName) {
-      const originalDefinition = targetModule.definitionsByEntryName.get(entryName)!;
-      kernelModuleBuilder.define(
-        toKernelDefinition(
-          originalDefinition,
-          targetModule.buildProviderResolverNamespaces,
-          replacement.provider,
-          replacement.options ?? {},
-        ),
-      );
+      const originalEntry = targetModule.entryDefinitionsByEntryName.get(entryName);
+
+      if (!originalEntry) {
+        throw new InvalidModuleUseError(
+          `Override targets unknown entry '${entryName}' in module '${targetModule.name}'.`,
+        );
+      }
+
+      const replacedEntry =
+        originalEntry.mode === TokenModes.Sync && replacement.mode === TokenModes.Sync
+          ? { ...originalEntry, provider: replacement.provider, options: replacement.options }
+          : originalEntry.mode === TokenModes.Async && replacement.mode === TokenModes.Async
+            ? { ...originalEntry, provider: replacement.provider, options: replacement.options }
+            : undefined;
+
+      if (!replacedEntry) {
+        throw new InvalidModuleUseError(`Replacement mode does not match original entry '${entryName}'.`);
+      }
+
+      kernelModuleBuilder.define(toKernelDefinition(replacedEntry, targetModule.buildProviderResolverNamespaces));
     }
   });
 }
