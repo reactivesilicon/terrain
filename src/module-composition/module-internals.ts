@@ -1,10 +1,11 @@
 import { ForeignModuleError } from "../errors";
 import type { Module } from "../module";
 import type { Definition } from "../types";
+import type { ComposedModule } from "./composed-module";
 import type { ResolverNamespaces } from "./kernel-definition-transformer";
 import type { ModuleEntryDefinitionWithToken, ModuleEntryName } from "./module-entry-definitions";
 import type { ModuleOverride } from "./module-override/module-override";
-import type { ComposedModule, ModuleEntryMap } from "./types";
+import type { ModuleEntryMap } from "./types";
 
 export type NamespacePrototypes = {
   readonly full: object;

@@ -1,4 +1,4 @@
-import type { ComposedModuleName } from "../types";
+import type { ComposedModuleName } from "../composed-module";
 
 declare const OVERRIDE_BRAND: unique symbol;
 

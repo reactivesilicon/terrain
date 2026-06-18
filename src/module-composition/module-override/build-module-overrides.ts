@@ -2,6 +2,7 @@ import { InvalidModuleUseError } from "../../errors";
 import { createModule as createKernelModule, type Module } from "../../module";
 import { type TokenMode, TokenModes } from "../../token";
 import { Lifetimes, type SingletonDefinitionOptions } from "../../types";
+import type { ComposedModuleName } from "../composed-module";
 import { toKernelDefinition } from "../kernel-definition-transformer";
 import type {
   AsyncModuleEntryDefinitionWithToken,
@@ -12,14 +13,17 @@ import type {
   SyncModuleEntryProvider,
 } from "../module-entry-definitions";
 import { type ComposedModuleInternals, type OverrideInternals, storeOverrideInternals } from "../module-internals";
+import type { ModuleEntryMap, OverrideBuilder } from "../types";
 import { createModuleOverride, type ModuleOverride } from "./module-override";
 
-export function buildModuleOverride(
-  moduleName: string,
+export function buildModuleOverride<ModuleName extends ComposedModuleName, ModuleEntries extends ModuleEntryMap>(
+  moduleName: ModuleName,
   entryDefinitionsByEntryName: ReadonlyMap<ModuleEntryName, ModuleEntryDefinitionWithToken>,
   moduleInternals: ComposedModuleInternals,
-  defineOverride: (overrideBuilder: unknown) => unknown,
-): ModuleOverride<string> {
+  defineOverride: (
+    overrideBuilder: OverrideBuilder<ModuleName, ModuleEntries>,
+  ) => OverrideBuilder<ModuleName, ModuleEntries>,
+): ModuleOverride<ModuleName> {
   const replacementsByEntryName = new Map<ModuleEntryName, ModuleEntryDefinitionWithToken>();
 
   function assertEntryCanBeReplaced(
@@ -91,7 +95,8 @@ export function buildModuleOverride(
     ) => collectAsyncReplacement(entryName, provider, options),
   };
 
-  defineOverride(overrideBuilder);
+  // TODO: refine this, have stricter types here on the overrideBuilder
+  defineOverride(overrideBuilder as any);
   if (replacementsByEntryName.size === 0) {
     throw new InvalidModuleUseError(`Override of module '${moduleName}' replaces nothing.`);
   }

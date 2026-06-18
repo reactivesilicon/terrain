@@ -12,6 +12,7 @@ import { createModule as createKernelModule } from "../module";
 import { type AnyToken, TokenModes } from "../token";
 import { type Definition, type Lifetime, Lifetimes, type SingletonDefinitionOptions } from "../types";
 import { assertModuleName } from "../validations/name-validations";
+import { type ComposedModule, type ComposedModuleName, createComposedModule } from "./composed-module";
 import { buildContainerView } from "./container-views";
 import { toKernelDefinition } from "./kernel-definition-transformer";
 import {
@@ -33,9 +34,7 @@ import { buildNamespacePrototypes, createResolverNamespaceBuilder } from "./modu
 import { buildModuleOverride, buildOverrideKernelModule } from "./module-override/build-module-overrides";
 import type { ModuleOverride } from "./module-override/module-override";
 import type {
-  ComposedModule,
   ComposedModuleBuilder,
-  ComposedModuleName,
   ContainerPart,
   ContainerView,
   ModuleEntryMap,
@@ -161,13 +160,9 @@ export function createModule(
     buildProviderResolverNamespaces: buildProviderResolverNamespaces,
   };
 
-  const module = {
-    name: moduleName,
-    override: (defineOverride: (overrideBuilder: unknown) => unknown): ModuleOverride<string> => {
-      return buildModuleOverride(moduleName, entryDefinitionsByEntryName, moduleInternals, defineOverride);
-    },
-  } as unknown as ComposedModule<string, ModuleEntryMap>;
-  Object.freeze(module);
+  const module = createComposedModule<string, ModuleEntryMap>(moduleName, (defineOverride) =>
+    buildModuleOverride(moduleName, entryDefinitionsByEntryName, moduleInternals, defineOverride),
+  );
   storeModuleInternals(module, moduleInternals);
   return module;
 }

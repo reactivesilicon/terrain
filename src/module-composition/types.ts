@@ -3,6 +3,7 @@
 import type { Simplify, UnionToIntersection } from "../kernel/types";
 import { type TokenMode, TokenModes } from "../token";
 import type { DefinitionOptions, SingletonDefinitionOptions } from "../types";
+import type { ComposedModule, ComposedModuleName } from "./composed-module";
 import type { ModuleEntryName } from "./module-entry-definitions";
 import type { ModuleOverride } from "./module-override/module-override";
 
@@ -10,8 +11,6 @@ import type { ModuleOverride } from "./module-override/module-override";
 // Each named definition contributes one Entry to its module's EntryMap. The
 // map is phantom: it exists so resolvers, accessors, and cross-module imports
 // are typed — the runtime works purely on internally minted tokens.
-
-export type ComposedModuleName = string;
 
 export type ModuleEntry<T, Mode extends TokenMode> = { value: T; mode: Mode };
 export type ModuleEntryMap = Record<string, ModuleEntry<unknown, TokenMode>>;
@@ -161,8 +160,6 @@ export interface ComposedModuleBuilder<
   >;
 }
 
-declare const COMPOSED_MODULE_BRAND: unique symbol;
-
 /** Override providers may resolve the module's OTHER entries (Omit of the one
  *  being replaced); the original's imports are reachable at runtime but not
  *  typed here — fakes are expected to be self-contained. */
@@ -181,16 +178,6 @@ export interface OverrideBuilder<ModuleName extends ComposedModuleName, ModuleEn
     ) => Promise<EntryValueOf<ModuleEntries, EntryName>>,
     options?: SingletonDefinitionOptions<EntryValueOf<ModuleEntries, EntryName>>,
   ): OverrideBuilder<ModuleName, ModuleEntries>;
-}
-
-export interface ComposedModule<ModuleName extends ComposedModuleName, ModuleEntries extends ModuleEntryMap> {
-  readonly [COMPOSED_MODULE_BRAND]: true;
-  readonly name: ModuleName;
-  /** Phantom — carries the entry map for resolver/accessor/import typing. */
-  readonly __entries?: ModuleEntries;
-  override(
-    build: (o: OverrideBuilder<ModuleName, ModuleEntries>) => OverrideBuilder<ModuleName, ModuleEntries>,
-  ): ModuleOverride<ModuleName>;
 }
 
 /** What createContainer accepts: modules (exposed as namespaces) and module
