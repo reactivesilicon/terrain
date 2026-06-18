@@ -63,6 +63,8 @@ export function bundleModuleEntryDefinitionWithToken(
       return { ...entryDefinition, token: createSyncToken<unknown>(tokenDescription) };
     case TokenModes.Async:
       return { ...entryDefinition, token: createAsyncToken<unknown>(tokenDescription) };
+
+    /* v8 ignore next -- unreachable: ModuleEntryDefinition.mode is exhausted by TokenModes.Sync and TokenModes.Async. */
     default:
       throw new Error(`Invalid token mode for entry ${entryDefinition} in module ${moduleName}`);
   }
