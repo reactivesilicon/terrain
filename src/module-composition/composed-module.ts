@@ -1,9 +1,7 @@
 import type { ModuleOverride } from "./module-override/module-override";
-import type { ModuleEntryMap, OverrideBuilder } from "./types";
+import type { ComposedModuleName, ModuleEntryMap, OverrideBuilder } from "./types";
 
 declare const COMPOSED_MODULE_BRAND: unique symbol;
-
-export type ComposedModuleName = string;
 
 type BuildModuleOverride<ModuleName extends ComposedModuleName, ModuleEntries extends ModuleEntryMap> = (
   build: (overrideBuilder: OverrideBuilder<ModuleName, ModuleEntries>) => OverrideBuilder<ModuleName, ModuleEntries>,

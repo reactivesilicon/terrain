@@ -12,7 +12,7 @@ import { createModule as createKernelModule } from "../module";
 import { type AnyToken, TokenModes } from "../token";
 import { type Definition, type Lifetime, Lifetimes, type SingletonDefinitionOptions } from "../types";
 import { assertModuleName } from "../validations/name-validations";
-import { type ComposedModule, type ComposedModuleName, createComposedModule } from "./composed-module";
+import { type ComposedModule, createComposedModule } from "./composed-module";
 import { buildContainerView } from "./container-views";
 import { toKernelDefinition } from "./kernel-definition-transformer";
 import {
@@ -35,6 +35,7 @@ import { buildModuleOverride, buildOverrideKernelModule } from "./module-overrid
 import type { ModuleOverride } from "./module-override/module-override";
 import type {
   ComposedModuleBuilder,
+  ComposedModuleName,
   ContainerPart,
   ContainerView,
   ModuleEntryMap,
@@ -44,6 +45,8 @@ import type {
 import { assertNoNamespaceCollisions, wiringOf } from "./wiring";
 
 export * from "./types";
+export type { ComposedModule } from "./composed-module";
+export type { ModuleOverride } from "./module-override/module-override";
 
 function makeBuilder(
   moduleEntryDefinitions: ModuleEntryDefinitions,

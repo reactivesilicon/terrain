@@ -2,7 +2,6 @@ import { InvalidModuleUseError } from "../../errors";
 import { createModule as createKernelModule, type Module } from "../../module";
 import { type TokenMode, TokenModes } from "../../token";
 import { Lifetimes, type SingletonDefinitionOptions } from "../../types";
-import type { ComposedModuleName } from "../composed-module";
 import { toKernelDefinition } from "../kernel-definition-transformer";
 import type {
   AsyncModuleEntryDefinitionWithToken,
@@ -13,6 +12,7 @@ import type {
   SyncModuleEntryProvider,
 } from "../module-entry-definitions";
 import { type ComposedModuleInternals, type OverrideInternals, storeOverrideInternals } from "../module-internals";
+import type { ComposedModuleName } from "../types";
 import type { ModuleEntryMap, OverrideBuilder } from "../types";
 import { createModuleOverride, type ModuleOverride } from "./module-override";
 

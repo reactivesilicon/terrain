@@ -3,7 +3,7 @@
 import type { Simplify, UnionToIntersection } from "../kernel/types";
 import { type TokenMode, TokenModes } from "../token";
 import type { DefinitionOptions, SingletonDefinitionOptions } from "../types";
-import type { ComposedModule, ComposedModuleName } from "./composed-module";
+import type { ComposedModule } from "./composed-module";
 import type { ModuleEntryName } from "./module-entry-definitions";
 import type { ModuleOverride } from "./module-override/module-override";
 
@@ -11,6 +11,8 @@ import type { ModuleOverride } from "./module-override/module-override";
 // Each named definition contributes one Entry to its module's EntryMap. The
 // map is phantom: it exists so resolvers, accessors, and cross-module imports
 // are typed — the runtime works purely on internally minted tokens.
+
+export type ComposedModuleName = string;
 
 export type ModuleEntry<T, Mode extends TokenMode> = { value: T; mode: Mode };
 export type ModuleEntryMap = Record<string, ModuleEntry<unknown, TokenMode>>;
