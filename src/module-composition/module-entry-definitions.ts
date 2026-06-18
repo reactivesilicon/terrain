@@ -24,9 +24,13 @@ export type ModuleEntryDefinition =
   | Simplify<BaseModuleEntryDefinition & SyncProvision>
   | Simplify<BaseModuleEntryDefinition & AsyncProvision>;
 
-export type ModuleEntryDefinitionWithToken =
-  | Simplify<BaseModuleEntryDefinition & SyncProvision & { token: Token<unknown> }>
-  | Simplify<BaseModuleEntryDefinition & AsyncProvision & { token: AsyncToken<unknown> }>;
+export type SyncModuleEntryDefinitionWithToken = Simplify<
+  BaseModuleEntryDefinition & SyncProvision & { token: Token<unknown> }
+>;
+export type AsyncModuleEntryDefinitionWithToken = Simplify<
+  BaseModuleEntryDefinition & AsyncProvision & { token: AsyncToken<unknown> }
+>;
+export type ModuleEntryDefinitionWithToken = SyncModuleEntryDefinitionWithToken | AsyncModuleEntryDefinitionWithToken;
 
 export class ModuleEntryDefinitions {
   readonly #definitionsByEntryName = new Map<ModuleEntryName, ModuleEntryDefinition>();

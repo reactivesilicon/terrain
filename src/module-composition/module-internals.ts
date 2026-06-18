@@ -1,14 +1,8 @@
 import { ForeignModuleError } from "../errors";
 import type { Module } from "../module";
-import { TokenModes } from "../token";
-import type { Definition, SingletonDefinitionOptions } from "../types";
+import type { Definition } from "../types";
 import type { ResolverNamespaces } from "./kernel-definition-transformer";
-import type {
-  AsyncModuleEntryProvider,
-  ModuleEntryDefinitionWithToken,
-  ModuleEntryName,
-  SyncModuleEntryProvider,
-} from "./module-entry-definitions";
+import type { ModuleEntryDefinitionWithToken, ModuleEntryName } from "./module-entry-definitions";
 import type { ModuleOverride } from "./module-override/module-override";
 import type { ComposedModule, ModuleEntryMap } from "./types";
 
@@ -27,21 +21,9 @@ export interface ComposedModuleInternals {
   buildProviderResolverNamespaces: ResolverNamespaces;
 }
 
-export type EntryReplacement =
-  | {
-      mode: typeof TokenModes.Sync;
-      provider: SyncModuleEntryProvider;
-      options: SingletonDefinitionOptions<unknown> | undefined;
-    }
-  | {
-      mode: typeof TokenModes.Async;
-      provider: AsyncModuleEntryProvider;
-      options: SingletonDefinitionOptions<unknown> | undefined;
-    };
-
 export interface OverrideInternals {
   targetModule: ComposedModuleInternals;
-  replacementsByEntryName: ReadonlyMap<ModuleEntryName, EntryReplacement>;
+  replacementsByEntryName: ReadonlyMap<ModuleEntryName, ModuleEntryDefinitionWithToken>;
 }
 
 const internalsByModule = new WeakMap<ComposedModule<string, ModuleEntryMap>, ComposedModuleInternals>();
