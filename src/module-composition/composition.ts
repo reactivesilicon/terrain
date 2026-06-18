@@ -30,6 +30,7 @@ import {
   storeModuleInternals,
 } from "./module-internals";
 import { buildNamespacePrototypes, createResolverNamespaceBuilder } from "./module-namespaces";
+import type { ModuleOverride } from "./module-override/module-override";
 import { buildModuleOverride, buildOverrideKernelModule } from "./module-overrides";
 import type {
   ComposedModule,
@@ -38,7 +39,6 @@ import type {
   ContainerPart,
   ContainerView,
   ModuleEntryMap,
-  ModuleOverride,
   PascalCase,
   UsedModules,
 } from "./types";

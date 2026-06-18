@@ -4,6 +4,7 @@ import type { Simplify, UnionToIntersection } from "../kernel/types";
 import { type TokenMode, TokenModes } from "../token";
 import type { DefinitionOptions, SingletonDefinitionOptions } from "../types";
 import type { ModuleEntryName } from "./module-entry-definitions";
+import type { ModuleOverride } from "./module-override/module-override";
 
 // ── type-level model ────────────────────────────────────────────────────────
 // Each named definition contributes one Entry to its module's EntryMap. The
@@ -161,16 +162,6 @@ export interface ComposedModuleBuilder<
 }
 
 declare const COMPOSED_MODULE_BRAND: unique symbol;
-declare const OVERRIDE_BRAND: unique symbol;
-
-/** Replaces providers (and their options) of entries on the module it was
- *  derived from — entry names, value types, and modes are all checked against
- *  the original. Lifetime is inherited; consumers resolve the replacement
- *  transparently because the original's internal tokens are reused. */
-export interface ModuleOverride<ModuleName extends ComposedModuleName> {
-  readonly [OVERRIDE_BRAND]: true;
-  readonly name: ModuleName;
-}
 
 /** Override providers may resolve the module's OTHER entries (Omit of the one
  *  being replaced); the original's imports are reachable at runtime but not

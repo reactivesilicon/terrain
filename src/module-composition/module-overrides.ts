@@ -15,7 +15,7 @@ import {
   type OverrideInternals,
   storeOverrideInternals,
 } from "./module-internals";
-import type { ModuleOverride } from "./types";
+import { createModuleOverride, type ModuleOverride } from "./module-override/module-override";
 
 export function buildModuleOverride(
   moduleName: string,
@@ -88,7 +88,7 @@ export function buildModuleOverride(
     throw new InvalidModuleUseError(`Override of module '${moduleName}' replaces nothing.`);
   }
 
-  const override = Object.freeze({ name: moduleName }) as unknown as ModuleOverride<string>;
+  const override = createModuleOverride(moduleName);
   storeOverrideInternals(override, { targetModule: moduleInternals, replacementsByEntryName });
   return override;
 }

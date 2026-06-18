@@ -9,7 +9,8 @@ import type {
   ModuleEntryName,
   SyncModuleEntryProvider,
 } from "./module-entry-definitions";
-import type { ComposedModule, ModuleEntryMap, ModuleOverride } from "./types";
+import type { ModuleOverride } from "./module-override/module-override";
+import type { ComposedModule, ModuleEntryMap } from "./types";
 
 export type NamespacePrototypes = {
   readonly full: object;
