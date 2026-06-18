@@ -25,16 +25,16 @@ export function buildModuleOverride(
 ): ModuleOverride<string> {
   const replacementsByEntryName = new Map<ModuleEntryName, EntryReplacement>();
 
-  const collectSyncReplacement = (
+  const assertEntryCanBeReplaced = (
     entryName: ModuleEntryName,
-    provider: SyncModuleEntryProvider,
+    expectedMode: typeof TokenModes.Sync | typeof TokenModes.Async,
     options?: SingletonDefinitionOptions<unknown>,
-  ) => {
+  ): void => {
     const original = entryDefinitionsByEntryName.get(entryName);
     if (!original) {
       throw new InvalidModuleUseError(`Override targets unknown entry '${entryName}' in module '${moduleName}'.`);
     }
-    if (original.mode !== TokenModes.Sync) {
+    if (original.mode !== expectedMode) {
       throw new InvalidModuleUseError(
         `Entry '${moduleName}.${entryName}' is ${original.mode}; use the matching override method.`,
       );
@@ -47,7 +47,14 @@ export function buildModuleOverride(
         `Override of '${moduleName}.${entryName}' cannot be eager: the original is ${original.lifetime}, not a singleton.`,
       );
     }
+  };
 
+  const collectSyncReplacement = (
+    entryName: ModuleEntryName,
+    provider: SyncModuleEntryProvider,
+    options?: SingletonDefinitionOptions<unknown>,
+  ) => {
+    assertEntryCanBeReplaced(entryName, TokenModes.Sync, options);
     replacementsByEntryName.set(entryName, { mode: TokenModes.Sync, provider, options });
     return overrideBuilder;
   };
@@ -57,24 +64,7 @@ export function buildModuleOverride(
     provider: AsyncModuleEntryProvider,
     options?: SingletonDefinitionOptions<unknown>,
   ) => {
-    const original = entryDefinitionsByEntryName.get(entryName);
-    if (!original) {
-      throw new InvalidModuleUseError(`Override targets unknown entry '${entryName}' in module '${moduleName}'.`);
-    }
-    if (original.mode !== TokenModes.Async) {
-      throw new InvalidModuleUseError(
-        `Entry '${moduleName}.${entryName}' is ${original.mode}; use the matching override method.`,
-      );
-    }
-    if (replacementsByEntryName.has(entryName)) {
-      throw new InvalidModuleUseError(`Override of module '${moduleName}' already replaces entry '${entryName}'.`);
-    }
-    if (options?.eager && original.lifetime !== Lifetimes.Singleton) {
-      throw new InvalidModuleUseError(
-        `Override of '${moduleName}.${entryName}' cannot be eager: the original is ${original.lifetime}, not a singleton.`,
-      );
-    }
-
+    assertEntryCanBeReplaced(entryName, TokenModes.Async, options);
     replacementsByEntryName.set(entryName, { mode: TokenModes.Async, provider, options });
     return overrideBuilder;
   };
