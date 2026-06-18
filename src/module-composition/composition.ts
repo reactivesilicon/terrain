@@ -30,8 +30,8 @@ import {
   storeModuleInternals,
 } from "./module-internals";
 import { buildNamespacePrototypes, createResolverNamespaceBuilder } from "./module-namespaces";
+import { buildModuleOverride, buildOverrideKernelModule } from "./module-override/build-module-overrides";
 import type { ModuleOverride } from "./module-override/module-override";
-import { buildModuleOverride, buildOverrideKernelModule } from "./module-overrides";
 import type {
   ComposedModule,
   ComposedModuleBuilder,

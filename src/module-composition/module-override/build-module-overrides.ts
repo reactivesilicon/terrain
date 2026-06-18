@@ -1,8 +1,8 @@
-import { InvalidModuleUseError } from "../errors";
-import { createModule as createKernelModule, type Module } from "../module";
-import { type TokenMode, TokenModes } from "../token";
-import { Lifetimes, type SingletonDefinitionOptions } from "../types";
-import { toKernelDefinition } from "./kernel-definition-transformer";
+import { InvalidModuleUseError } from "../../errors";
+import { createModule as createKernelModule, type Module } from "../../module";
+import { type TokenMode, TokenModes } from "../../token";
+import { Lifetimes, type SingletonDefinitionOptions } from "../../types";
+import { toKernelDefinition } from "../kernel-definition-transformer";
 import type {
   AsyncModuleEntryDefinitionWithToken,
   AsyncModuleEntryProvider,
@@ -10,9 +10,9 @@ import type {
   ModuleEntryName,
   SyncModuleEntryDefinitionWithToken,
   SyncModuleEntryProvider,
-} from "./module-entry-definitions";
-import { type ComposedModuleInternals, type OverrideInternals, storeOverrideInternals } from "./module-internals";
-import { createModuleOverride, type ModuleOverride } from "./module-override/module-override";
+} from "../module-entry-definitions";
+import { type ComposedModuleInternals, type OverrideInternals, storeOverrideInternals } from "../module-internals";
+import { createModuleOverride, type ModuleOverride } from "./module-override";
 
 export function buildModuleOverride(
   moduleName: string,
