@@ -165,7 +165,6 @@ export function createModule(
 
   const moduleInternals: ComposedModuleInternals = {
     name: moduleName,
-    definitionsByEntryName: definitionsByEntryName,
     entryDefinitionsByEntryName: entryDefinitionsByEntryName,
     kernelModule: kernelModule,
     usedModules: usedModuleInternals,
