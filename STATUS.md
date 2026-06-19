@@ -1,125 +1,153 @@
 # terrain — project status
 
-> Working notes for the maintainers. Updated 2026-06-13, branch `leap-q1`.
+> Maintainer notes. Updated 2026-06-19, branch `leap-q1`.
 
 ## Where things stand
 
-**`main`** holds **terrain v1.0.0** — the token-based API, released:
+**`main`** holds the released **terrain v1.0.0** token-based API.
 
-- npm package **`terrain-di`** (the bare name `terrain` is squatted); repo `reactivesilicon/terrain`. Verify publish state with `npm view terrain-di`.
-- GitHub Actions CI runs `bun run quality` + build on every push/PR (Node 24 + bun pinned).
-- Release notes for the v1.0.0 GitHub Release were drafted in-session; CHANGELOG.md was deliberately deleted — **GitHub Releases is the only changelog channel**.
+- npm package: **`terrain-di`**; the bare name `terrain` is squatted.
+- Current published npm version checked during release prep: **`1.0.0`**.
+- GitHub Releases is the changelog channel; `CHANGELOG.md` was deliberately removed.
+- The v1 token engine still exists in this branch, but it is no longer the package entrypoint.
 
-**`leap-q1`** holds the **module-composition layer** (v2 candidate) under `src/module-composition/` (`composition.ts` runtime + `types.ts` type-level model + `wiring.ts` uses-graph rules; errors live in the shared `src/errors.ts`) — a typed facade over the unchanged v1 engine. The v1 public API is untouched and `src/module-composition` is not exported from `index.ts`.
+**`leap-q1`** is the composition-first public API branch and current release candidate for **`terrain-di@1.1.0`**.
 
-## v1.0.0 (main) — what it is
+- `src/index.ts` exports `errors`, `module-composition`, and option/disposer types. Tokens, the raw `Container`, and the kernel `ModuleBuilder` are internal implementation details reachable only by deep imports.
+- `README.md` now documents the composition API as the primary API.
+- `package.json` is bumped to `1.1.0`.
+- `npm pack --dry-run` has been verified for `terrain-di@1.1.0`; the tarball contains only `LICENSE`, `README.md`, `dist/index.js`, `dist/index.d.ts`, and `package.json`.
 
-- Object tokens (`createSyncToken`/`createAsyncToken`), branded interfaces, unexported impl classes, frozen, rich printing (`Token<sync #ab12cd>(name)`).
-- **Compile-time sync/async split**: `get()` rejects `AsyncToken`, `getAsync()` rejects `Token`; runtime errors (`AsyncProviderError`/`SyncProviderError`) remain as backstops for untyped callers. `AnyToken` where mode doesn't matter.
-- Modules via `createModule(setup)` (statement style, void callbacks); six builder methods with options: `{ dispose }` everywhere, `{ eager }` on singletons only (type-enforced via separate `SingletonDefinitionOptions`). The six methods are sugar over `ModuleBuilder.define(definition)` — the data-driven registration primitive. The `Definition` union itself encodes the eager rule (`LifetimeOptions`: `eager?: boolean` on singletons, `eager?: never` otherwise), and `define()` throws `InvalidDefinitionError` as the runtime backstop for untyped callers.
-- **Explicit disposal only** — no `dispose()` duck-typing. Token-keyed disposal records (alias-safe). Reverse creation order.
-- **Eager boot**: `{ eager: true }` + `await container.start()` (parallel, `AggregateError` on failures, idempotent, constructs at `start()` not `load()` so test overrides still work).
-- **Unload safety**: construction-time `DependencyGraph` (token-level "who captured whom", lives on root); `unload` refuses live dependents (`DependentInstanceError`), conservative by design; edges purged on unload/override/scope-dispose. Module-identity ownership (`definitionOwners`): a stale module object can't evict its replacement (`ModuleOwnershipError`).
-- Accessors: `container.accessors({ name: Token })` / `createAccessors` — typed lazy getters. The mechanism (`buildAccessorPrototype` + `instantiateAccessors` in `accessors.ts`: per-spec prototypes, lazy cached closures, destructuring-safe) is shared with the module-composition layer's namespaces — one accessor implementation for both APIs.
-- Scoped-on-root is **legal and documented**: every container is a scope; root caches scoped instances until disposal.
-- Engine concurrency invariants (tree lifecycle lock, in-flight orphaning, promise-identity guards) all preserved and fuzz-tested.
-
-### v1 documented limitations (README "Known limitations")
-
-1. **Coalesced async cycles deadlock** instead of throwing (cycle split across two concurrent `getAsync` chains). Future fix: wait-for graph. _(Note: inexpressible in the module-composition layer — see below.)_
-2. Unload safety can't see references held by application code.
-3. Dependent tracking is conservative (resolve == capture).
-
-## Module-composition layer (leap-q1) — what it is
+## Public API now
 
 ```ts
 const Infra = createModule("Infra", (m) => m.single("logger", (): Logger => new ConsoleLogger()));
-const Data  = createModule("Data", { uses: [Infra] }, (m) =>
-  m.single("userRepository", (r) => new InMemoryUserRepository(r.Infra.logger())));
-const app = createContainer(Data, Infra);
-app.Data.userRepository();             // typed, no tokens anywhere
-await app.scope(async (req) => ...);   // auto-disposed request scope
+const Data = createModule("Data", { uses: [Infra] }, (m) =>
+  m.single("userRepo", (r): UserRepo => new InMemoryUserRepo(r.Infra.logger(), new Map([["1", "Ada"]]))),
+);
+const UseCases = createModule("UseCases", { uses: [Data, Infra] }, (m) =>
+  m.single("findUser", (r): FindUserUseCase => new FindUserUseCase(r.Data.userRepo(), r.Infra.logger())),
+);
+
+const app = createContainer(UseCases);
+app.UseCases.findUser().execute("1");
+await app.dispose();
 ```
 
-- **No tokens, no type args**: names at registration are the handles; interfaces enter via provider return annotations. Tokens are minted internally (`"Module.entry"` descriptions) — the v1 engine does all real work. Registration constructs engine `Definition` records (`toEngineDefinition` → `ModuleBuilder.define`); there is no method-dispatch translation layer.
-- **Chaining is the contract**: type accumulation rides each builder call's return (statement style is impossible — variable types can't evolve; documented).
-- **One call shape everywhere**: `Module.entry()` — container view, scope views, and inside providers (own module under its own name; imports under theirs). `get/getAsync/has` were removed entirely.
-- **Compile-time guarantees**: forward refs rejected → in-module cycles unwritable; `uses` requires existing values → cross-module cycles unwritable (v1's deadlock limitation can't be expressed); sync providers see only sync entries of imports; unknown names/namespaces are type errors.
-- **Wiring is transitive, exposure is explicit**: `uses` deps auto-load; only modules passed to `createContainer` get namespaces. No transitive re-export → type-enforced layer isolation.
-- **PascalCase module names enforced** (compile-time `PascalCase<Name>` + runtime regex): the view API is lowercase forever, so namespaces can never shadow `scope`/`start`/`dispose` — no reserved-word list. Entry names must be identifiers.
-- **Version diamonds work and are tested**: A uses Core@v1, B uses Core@v2 — each importer's `r.Core` resolves to its own; only exposing both same-named modules conflicts.
-- **Views are closed (decided 2026-06-13)**: no `container` escape hatch — tokens and the engine are internal currency, never on the public surface. Engine capabilities reach users only as typed view features; v1 and composed modules cannot share one container.
-- **Internals are unreachable (2026-06-13)**: module/override internals live in module-scoped `WeakMap` registries, not on the objects — public objects are frozen `{ name, override }` / `{ name }`, so no JS caller can reach tokens, the engine module, or wiring state. `ForeignModuleError` is identity-based (presence in the registry), not shape-based — structural look-alikes are rejected.
-- **Dual-mode `scope()`** on both views (callback form auto-disposes via engine `withScope`; scopes nest).
-- **Perf**: namespaces are per-module prototypes with lazy-getter accessors (the shared `accessors.ts` machinery; cached closures, destructuring-safe) — `scope()` ≈ 571ns at 200 entries; factory resolution ≈ 310ns. Type-cost measured: ~300ms marginal tsc for a pathological 200-entry module.
-- All guards are `DIError` subclasses: `InvalidModuleNameError`, `InvalidEntryNameError`, `DuplicateEntryNameError`, `InvalidModuleUseError`, `ForeignModuleError`, `DuplicateModuleNameError`.
-- Playground: `examples/module-composition.ts` (3-layer real-world shape). v1 playground: `examples/public-api-usage.ts`.
+- **No public tokens**: entry names are the handles; internal tokens are minted as implementation currency.
+- **Typed namespaces**: modules passed to `createContainer` are exposed as namespaces; transitive `uses` dependencies are wired but hidden unless passed explicitly.
+- **Chaining is the contract**: builder return types carry the entries registered so far. Imperative registration through a captured builder works at runtime but is invisible to the module type.
+- **One call shape**: container views, scope views, and provider resolvers all resolve through module namespaces and entry accessors.
+- **Sync/async split**: sync providers see only sync entries; async providers see sync and async entries. Async accessors return promises.
+- **Lifetimes**: singleton, factory, scoped; sync and async forms for each.
+- **Lifecycle**: `start`, callback/no-arg `scope`, reverse-order disposal, explicit disposers only.
+- **Overrides**: `Module.override()` returns an inline override for `createContainer`; overrides rewire but never expose namespaces.
+- **Closed views**: no public engine-container escape hatch.
 
-### Module-composition caveats (documented in composition.ts header)
+## Composition semantics
 
-- Go-to-definition on `r.Infra.logger` lands on a mapped type, not the provider.
-- The chain is the contract: imperative registration via captured `m` exists at runtime, invisible to types.
+- `uses` dependencies are loaded transitively.
+- Exposure is explicit: only modules passed to `createContainer` get public namespaces.
+- Shared dependency modules are deduplicated by module object identity; singleton entries from the same module object are shared by all importers.
+- Version diamonds work: two importers can use different module objects with the same name, and each importer resolves its own dependency.
+- Namespace collisions are rejected where they would be ambiguous: a module cannot directly use two same-named modules, and a container cannot expose two same-named modules.
+- Cross-module cycles are unwritable because `uses` requires existing module values.
+- In-module cycles are unwritable in typed code because a provider can only see earlier entries in the returned chain.
 
-## ✅ Overrides (the former gating gap) — SHIPPED 2026-06-12
+## Engine boundary
 
-Settled design (all four decisions made by the maintainer):
+The v1 engine remains the runtime substrate:
 
-```ts
-const FakeInfra = InfraModule.override((o) =>
-  o
-    .with("logger", (): Logger => silentLogger) // sync entries
-    .withAsync("db", async () => fakeDb, { eager: true }),
-); // async entries
+- `src/container/` owns resolution, lifetimes, scopes, eager start, disposal, unload/override mechanics, lifecycle locking, async orphan handling, and dependency tracking.
+- `src/module.ts`, `src/token.ts`, `src/types.ts`, and `src/accessors.ts` define the kernel concepts and shared accessor machinery.
+- `src/module-composition/` owns names, module identity, `uses` wiring, typed resolver namespaces, view construction, and override UX.
+- Shared vocabulary is engine-side and consumed upward: errors, lifetimes, token modes, resolver types, and accessor primitives.
 
-const app = createContainer(DomainModule, FakeInfra); // overrides inline in the list
+The package entrypoint intentionally exports only the composition layer and framework errors. The token engine is an internal implementation detail for the published package surface.
+
+## Release notes for 1.1.0
+
+Release positioning:
+
+- Composition-first API.
+- Named modules and typed namespace accessors.
+- Transitive wiring with explicit namespace exposure.
+- Scoped views and callback scopes.
+- Async providers and eager initialization.
+- Module overrides for testing/fakes.
+- Deterministic explicit disposal.
+
+Release checks already run locally:
+
+```sh
+bun run quality
+bun run build
+npm pack --dry-run
+npm view terrain-di version
 ```
 
-- **Derived anchor**: `Module.override()` — identity-based (original tokens reused), fully compile-checked: entry names, value types, and sync/async mode are constrained by the original (`@ts-expect-error`-pinned).
-- **Inline passing**: overrides travel in `createContainer`'s variadic list (`ContainerPart = NamedModule | ModuleOverride`); they rewire but never expose namespaces.
-- **Provider + options only**: lifetime is inherited from the original (tested for scoped/factory/async); `eager` in override options requires the original to be a singleton (runtime-guarded).
-- **Loud on misuse**: unused override (target not in wiring), empty override, duplicate replacement, eager-on-non-single, unknown entry / mode mismatch (runtime backstops for JS) — all throw `DIError` subclasses.
-- Works on transitive (unexposed) targets; overriding affects every importer — that's the point. Eager interplay: fake constructs at `start()`, real provider never runs (tested).
-- Override providers may resolve the module's other entries (`r.Mod.base()`); the original's imports are reachable at runtime but not typed (fakes are expected to be self-contained — documented in `OverrideBuilder` JSDoc).
+Observed results:
 
-## Boundary of responsibilities (decided 2026-06-13)
+- `bun run quality`: passed.
+- Tests: **173 passed** across **16 files** with coverage gates met.
+- Coverage summary from the latest run: statements 99.85%, branches 99.14%, functions 99.54%, lines 100%.
+- `bun run build`: passed; generated `dist/index.js` and `dist/index.d.ts`.
+- `npm pack --dry-run`: passed for `terrain-di@1.1.0`.
+- npm currently publishes `terrain-di@1.0.0`; `1.1.0` is available to publish.
 
-Where functionality belongs — consult this before adding anything:
+Before publishing:
 
-- **Engine** (`src/container/`, `src/module.ts`, `src/token.ts`, `src/types.ts`, `src/accessors.ts`): definitions and their registration primitive (`ModuleBuilder.define`), resolution, lifetimes, lifecycle (load/unload/override/dispose/start), concurrency invariants, accessor machinery. The engine `Module` is a flat, frozen bag of definitions and knows nothing about other modules — deliberately.
-- **Module-composition layer** (`src/module-composition/`): names and module identity, composition (`uses` → transitive wiring in `wiring.ts`), typed provider resolvers and namespaces, views, override UX. Composition lives here, not in the engine, because it is a user-facing module concept whose typed half (namespace imports) can only exist at this layer.
-- **Shared vocabulary is defined once, engine-side, and consumed upward**: errors (`errors.ts`), `Lifetimes`/`TokenModes`, resolver types, accessor primitives. The layer never re-declares an engine concept.
+- Push `leap-q1` and let CI validate the exact commit.
+- Draft GitHub Release notes; no changelog file is expected.
+- Confirm whether the release should be published from `leap-q1` directly or merged/tagged through `main`.
 
-## Deferred / open (non-gating)
+## Examples
 
-- Module-composition unload/hot-swap surface (or declare out of scope: `createContainer` is static composition by design).
-- Module-name aliasing (only matters if a third-party module ecosystem emerges).
-- v2 packaging decision: does the module-composition layer become the primary export of `terrain-di@2`? Final vocabulary: layer types take the `Module` name, kernel `Module` becomes `DefinitionSet` (settled direction, executed at the v2 boundary).
-- v1 wait-for-graph fix for the coalesced-cycle deadlock (post-1.0, engine-level; moot for the module-composition layer).
-- Possible future: `getOrNull`-style optional resolution (v1, additive).
-- `createContainer(...parts)` cannot pass `ContainerOptions` (e.g. `onDisposeError`) — now the only unreachable engine capability; natural shape is a `createContainer(options, ...parts)` overload.
-- Zero-cast accessor typing: brand `AccessorPrototype<Source>` + split builders so instantiating a full prototype over a plain `SyncResolver` is a compile error (design sketched in-session; deferred — eliminates the one capability cast in `accessors.ts` at the cost of brand-mint casts).
-- Layer type vocabulary (`NamedModule` → `Module` etc.) — rides the v2 packaging item above.
+- `examples/public-api-usage.ts`: composition-first public API example with class-based logger/repository/use-case wiring, scopes, async config, and overrides.
+- `examples/engine.ts`: deep-import reference for the internal token kernel. This is advanced/internal documentation, not the package entrypoint story.
 
-## Engineering infrastructure (applies to both)
+There is no `examples/module-composition.ts` in the current tree.
 
-- **Tests**: vitest (migrated from custom harness, then from bun-test-incompatible assertions — `bun test` also passes but is NOT the configured runner; `bun run test` is). 171 tests across 16 files. Auto-discovery (`test/runs/*.test.ts`).
-- **Coverage gates in `quality`**: statements 99 / branches 97 / functions 99 / **lines 100**. Deliberately-unreachable defensive code is marked `/* v8 ignore ... */` **with a reason** — each marker is an auditable exception (`grep -rn "v8 ignore" src/`).
-- **Fuzzers** (both seeded via `TEST_SEED`, printed every run, replayable): `stress.test.ts` (engine: random load/unload/get/scope/dispose/start sequences) and `stress-module-composition.test.ts` (module-composition layer: random module graphs + ops incl. scope views interleaved with disposal). Four invariants: no use-after-dispose, no double-dispose, exactly-once teardown of cached instances, framework-errors-only. Fired-and-forgotten resolutions use a teardown-epoch to avoid a legitimate false positive (caller-side observation lag).
-- **Gate**: `bun run quality` = oxlint + oxfmt + tsc (src) + tsc (tests — note: this was once silently broken by an inherited `exclude`; fixed) + vitest with coverage. CI mirrors it exactly.
+## Deferred / open
 
-## Conventions to uphold (see `.agents/skills/code-clarity/SKILL.md`)
+These are not current release blockers unless the maintainer decides otherwise:
 
-- "Names do the narration, comments do the proofs." Comments only for constraints code can't express; re-audit comments after every rename (census re-runs). No JSDoc by default.
-- Read-aloud test for names; maps as `<values>By<key>`; booleans state exact facts; established vocabulary over invented synonyms.
-- Compile-time enforcement first, runtime backstops for untyped callers — everywhere (token brands, eager placement, PascalCase names, builder splits).
-- Fail loudly in the safe direction; conservative false positives over silent unsoundness.
-- User's working preferences: discuss design/naming **before** changing code; present options with a recommendation; evaluations should be ranked findings with severity; every change lands with tests + gate green.
+- **Public type vocabulary**: current exported names include `ComposedModule` and `ModuleOverride`. Earlier notes discussed renaming the layer type to `Module` and the kernel module to `DefinitionSet` at a v2 boundary; that rename is not done in this 1.1.0 candidate.
+- **Composition container options**: `createContainer(...parts)` cannot pass engine `ContainerOptions` such as `onDisposeError`; natural future shape is an overload like `createContainer(options, ...parts)`.
+- **Module unload/hot-swap at the composition layer**: currently out of scope; `createContainer` is static composition.
+- **Module-name aliasing**: only likely to matter if a third-party module ecosystem emerges.
+- **Optional resolution**: no `getOrNull`-style API.
+- **Engine wait-for graph**: the v1 coalesced async cycle deadlock remains an engine-level future item, but the composition layer's typed API makes those cycles unwritable in normal use.
+- **Zero-cast accessor typing**: possible future cleanup around branded accessor prototypes and split builders.
+
+## Engineering infrastructure
+
+- Test runner: Vitest via `bun run test`; `bun test` is not the configured runner.
+- Full gate: `bun run quality` = oxlint + oxfmt + source typecheck + test typecheck + coverage-gated Vitest.
+- Build: `bun run build` via `tsdown`.
+- Fuzzers print `TEST_SEED` for replay:
+  - `test/runs/stress.test.ts`
+  - `test/runs/stress-module-composition.test.ts`
+- Benchmark: `bench/module-composition-type-bench.mjs`.
+- Coverage gates in `quality`: statements 99, branches 97, functions 99, lines 100.
+
+## Conventions to uphold
+
+See `.agents/skills/code-clarity/SKILL.md`.
+
+- Names do the narration; comments do the proofs.
+- Prefer compile-time enforcement with runtime backstops for untyped callers.
+- Fail loudly in the safe direction.
+- Keep engine responsibilities and composition-layer responsibilities separate.
+- Discuss design/naming before code when the change affects public API shape.
+- Release-quality changes should land with tests and a green gate.
 
 ## Verification quickstart
 
 ```sh
-bun run quality          # full gate (lint, format, both typechecks, coverage-gated tests)
-bun examples/public-api-usage.ts    # v1 playground
-bun examples/module-composition.ts    # module-composition playground
-TEST_SEED=<n> bun run test   # replay a fuzzer run
+bun run quality
+bun run build
+bun examples/public-api-usage.ts
+TEST_SEED=<n> bun run test
+node bench/module-composition-type-bench.mjs
 ```
