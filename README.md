@@ -4,7 +4,7 @@
 
 A pragmatic TypeScript dependency injection container.
 
-No decorators. No reflection. No runtime dependencies. You define modules by name, declare what each one uses, and compose them into a container. Dependencies are resolved through typed namespaces — `app.UseCases.findUser()` returns a fully typed use case, with no tokens, no casts, and no service locator plumbing. Wrong wiring fails loudly, and as much of it as possible fails at compile time.
+No decorators. No reflection. No runtime dependencies. You define modules by name, declare what each one uses, and compose them into a container. Dependencies are resolved through typed namespaces, with no tokens, no casts, and no service locator plumbing. Wrong wiring fails loudly, and as much of it as possible fails at compile time.
 
 ## Installation
 
@@ -38,9 +38,9 @@ npm install terrain-di
 
 **No tokens, no casts:**
 
-- modules are named; entries are named; resolution reads like an API: `app.UseCases.findUser().execute("1")`
-- types flow from the providers themselves — annotate a provider's return type and that type appears everywhere the entry is used, with no `get<T>()` and no token plumbing
-- the sync/async split is compile-time: a sync provider can only reach sync entries; an async entry resolves to a `Promise`
+- modules are named; entries are named; resolution reads like an API
+- types flow from the providers themselves — annotate a provider's return type and that type appears everywhere the entry is used, with no generic service-location calls and no token plumbing
+- the sync/async split is compile-time: a sync provider can only reach sync entries; async entries resolve as promises
 
 **Composition that the types enforce:**
 
@@ -414,7 +414,7 @@ Throws `CaptiveDependencyError` on resolution.
 ## Known limitations
 
 - **Composition is static.** `createContainer` builds a fixed graph; there is no runtime unload or hot-swap of a composed container. Build a fresh container instead (this is also the testing model — a new container per test).
-- **Go-to-definition on `r.Infra.logger` lands on a mapped type**, not the provider. This is inherent to computed accessor types.
+- **Go-to-definition on resolver namespace accessors (`r.Infra.logger`) lands on a mapped type**, not the provider. This is inherent to computed accessor types.
 - **The chain is the contract.** Imperative registration on a captured builder runs at runtime but is invisible to the types — keep `setup` a single returned chain.
 
 ## Error types
