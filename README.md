@@ -4,7 +4,7 @@
 
 A pragmatic TypeScript dependency injection container.
 
-No decorators. No reflection. No runtime dependencies. You define modules by name, declare what each one uses, and compose them into a container. Dependencies are resolved through typed namespaces — `app.Data.users()` returns a fully typed value, with no tokens, no casts, and no manual wiring. Wrong wiring fails loudly, and as much of it as possible fails at compile time.
+No decorators. No reflection. No runtime dependencies. You define modules by name, declare what each one uses, and compose them into a container. Dependencies are resolved through typed namespaces — `app.UseCases.findUser()` returns a fully typed use case, with no tokens, no casts, and no service locator plumbing. Wrong wiring fails loudly, and as much of it as possible fails at compile time.
 
 ## Installation
 
@@ -38,7 +38,7 @@ npm install terrain-di
 
 **No tokens, no casts:**
 
-- modules are named; entries are named; resolution reads like an API: `app.Infra.logger()`
+- modules are named; entries are named; resolution reads like an API: `app.UseCases.findUser().execute("1")`
 - types flow from the providers themselves — annotate a provider's return type and that type appears everywhere the entry is used, with no `get<T>()` and no token plumbing
 - the sync/async split is compile-time: a sync provider can only reach sync entries; an async entry resolves to a `Promise`
 
@@ -112,19 +112,19 @@ const Infra = createModule("Infra", (m) => m.single("logger", (): Logger => new 
 // Data declares that it uses Infra. Inside its providers, Infra's entries are
 // available under `r.Infra`.
 const Data = createModule("Data", { uses: [Infra] }, (m) =>
-  m.single("users", (r): UserRepo => new InMemoryUserRepo(r.Infra.logger(), new Map([["1", "Ada"]]))),
+  m.single("userRepo", (r): UserRepo => new InMemoryUserRepo(r.Infra.logger(), new Map([["1", "Ada"]]))),
 );
 
 const UseCases = createModule("UseCases", { uses: [Data, Infra] }, (m) =>
-  m.single("findUser", (r): FindUserUseCase => new FindUserUseCase(r.Data.users(), r.Infra.logger())),
+  m.single("findUser", (r): FindUserUseCase => new FindUserUseCase(r.Data.userRepo(), r.Infra.logger())),
 );
 
 // Compose. Passing UseCases wires Data and Infra transitively, but only
 // UseCases is exposed as a public namespace.
 const app = createContainer(UseCases);
-const findUserUseCase = app.UseCases.findUser(); // typed
+const findUser = app.UseCases.findUser(); // FindUserUseCase
 
-findUserUseCase.execute("1"); // typed
+findUser.execute("1"); // typed, token-free
 
 await app.dispose();
 ```
@@ -143,16 +143,17 @@ const Infra = createModule("Infra", (m) =>
 );
 ```
 
-**The chain is the contract.** Each builder call returns a new builder whose type carries the entries registered so far. Keep `setup` a single returned chain — that is how types accumulate. Capturing the builder and registering imperatively (inside an `if`, say) works at runtime but is invisible to the types:
+**The chain is the contract.** Each builder call returns a new builder whose type carries the entries registered so far. Keep `setup` a single returned chain — that is how types accumulate. Capturing the builder and registering imperatively is a runtime escape hatch; TypeScript cannot see the entries added that way, so the public module type will not reflect them:
 
 ```ts
-// Do this — one returned chain.
-createModule("Infra", (m) => m.single("a", ...).single("b", ...));
+// Do this — one returned chain. `b` can resolve `a`, and both are typed.
+createModule("Infra", (m) => m.single("a", () => 1).single("b", (r) => r.Infra.a() + 1));
 
-// Not this — the entries won't be typed.
+// Not this — it registers at runtime, but the module type has no `a` or `b`.
 createModule("Infra", (m) => {
-  m.single("a", ...);
-  if (cond) m.single("b", ...);
+  m.single("a", () => 1);
+  m.single("b", () => 2);
+  return m;
 });
 ```
 
@@ -165,7 +166,7 @@ A module lists the modules it depends on in `{ uses: [...] }`. Their entries the
 ```ts
 const Domain = createModule("Domain", { uses: [Data] }, (m) =>
   m.single("userService", (r) => ({
-    getUser: (id: string) => r.Data.users().find(id),
+    getUser: (id: string) => r.Data.userRepo().find(id),
   })),
 );
 ```
@@ -189,24 +190,24 @@ const app = createContainer(Infra, Data, Domain); // all three exposed
 
 If two modules use the same module object, that dependency is wired once; singleton entries from it are shared by every importer. Different module objects with the same name are distinct dependencies, which is what lets version diamonds work.
 
-A module used by two others at different versions is fine: each importer's `r.Core` resolves to the exact module it imported. Only exposing two modules with the _same name_ on one container conflicts (`DuplicateModuleNameError`).
+A version diamond is fine: `A` can use `Core` v1 while `B` uses `Core` v2, and each importer's `r.Core` resolves to the exact module it imported. A conflict only appears where one namespace would need to hold both: a module cannot directly `uses` two modules with the same name, and a container cannot expose two modules with the same name (`DuplicateModuleNameError`).
 
 ## Resolvers and namespaces
 
 The resolver a provider receives is namespaces all the way down — one uniform call shape, identical to the container view:
 
 - **imported modules** appear under their names: `r.Infra.logger()`
-- **the module's own earlier entries** appear under its own name: `r.Data.cache()`
+- **the module's own earlier entries** appear under its own name: `r.Data.rows()`
 
 ```ts
 const Data = createModule("Data", { uses: [Infra] }, (m) =>
   m
-    .single("cache", () => new Map<string, string>())
-    .single("users", (r) => new UserRepo(r.Data.cache(), r.Infra.logger())),
+    .single("rows", () => new Map([["1", "Ada"]]))
+    .single("userRepo", (r): UserRepo => new InMemoryUserRepo(r.Infra.logger(), r.Data.rows())),
 );
 ```
 
-`users` can read `r.Data.cache()` because `cache` was defined before it. Referencing an entry defined _later_ in the chain is a type error — this is what makes in-module cycles impossible to write.
+`userRepo` can read `r.Data.rows()` because `rows` was defined before it. Referencing an entry defined _later_ in the chain is a type error — this is what makes in-module cycles impossible to write.
 
 **Sync providers see only sync entries.** A `single` / `factory` / `scoped` provider's resolver exposes only the synchronous entries of its imports. Async entries are reachable only from async providers, so async construction can never hide behind a synchronous call:
 
@@ -216,10 +217,10 @@ const Infra = createModule("Infra", (m) =>
 );
 
 createModule("Data", { uses: [Infra] }, (m) =>
-  m.single("users", (r) => {
+  m.single("userRepo", (r): UserRepo => {
     r.Infra.logger(); // ok — sync entry
-    r.Infra.config(); // type error — async entry, unreachable from a sync provider
-    return new UserRepo();
+    // r.Infra.config(); // type error — async entry, unreachable from a sync provider
+    return new InMemoryUserRepo(r.Infra.logger(), new Map<string, string>());
   }),
 );
 ```
@@ -233,7 +234,7 @@ Each entry has a lifetime, chosen by the builder method.
 One instance for the whole container, created on first use and cached.
 
 ```ts
-m.single("logger", () => new Logger());
+m.single("logger", (): Logger => new ConsoleLogger());
 ```
 
 ```ts
@@ -355,34 +356,38 @@ Disposal runs in **reverse creation order**, so dependents are torn down before 
 Derive an override from a module to replace some of its entries, then pass the override into `createContainer` alongside the modules. The override rewires; it never adds a namespace of its own.
 
 ```ts
-const FakeInfra = Infra.override(
-  (o) =>
-    o
-      .with("logger", (): Logger => ({ info: () => {} })) // sync entries
-      .withAsync("database", async () => fakeDb, { eager: true }), // async entries
-);
+class SilentLogger implements Logger {
+  info(_message: string): void {}
+}
 
-const app = createContainer(Domain, FakeInfra); // real wiring + the fake
-app.Domain.userService().getUser("1"); // runs against the fake logger and database
+const FakeInfra = Infra.override((o) => o.with("logger", (): Logger => new SilentLogger()));
+
+const app = createContainer(UseCases, FakeInfra); // real wiring + the fake
+app.UseCases.findUser().execute("1"); // runs against the fake logger
 ```
 
 Overrides are fully checked against the original: entry names, value types, and the sync/async mode must match (`with` for sync entries, `withAsync` for async). The lifetime is inherited from the original; `eager` in an override requires the original to be a singleton.
 
-An override applies to **every** importer of the target module — overriding `Infra` affects `Data` and `Domain` too, even though they're separate modules. That's the point: you fake one thing and the whole graph picks it up. Overriding works on transitive, unexposed modules as well. An override whose target isn't part of the container's wiring is rejected (`InvalidModuleUseError`).
+An override applies to **every** importer of the target module — overriding `Infra` affects `Data`, `Domain`, `UseCases`, or any other consumer in the graph. That's the point: you fake one thing and the whole graph picks it up. Overriding works on transitive, unexposed modules as well. An override whose target isn't part of the container's wiring is rejected (`InvalidModuleUseError`).
 
 An override provider may resolve the module's _other_ entries (`r.Infra.someOther()`), but fakes are expected to be self-contained — the original's imports are reachable at runtime but not surfaced in the override's types.
 
 ## Guardrails
 
-Most wiring mistakes are caught at compile time:
+The type system catches the wiring mistakes it can express:
 
 - **In-module cycles are unwritable** — a provider can only reference entries defined before it.
 - **Cross-module cycles are unwritable** — `uses` only accepts modules that already exist.
 - **Sync providers can't reach async entries** of their imports.
 - **Unknown module or entry names** are type errors.
-- **Module names must be PascalCase; entry names must be identifiers.**
+- **Lowercase literal module names** are rejected before runtime.
 
-The rest are runtime guards, each a `DIError` subclass:
+Runtime backstops catch invalid dynamic input and lifecycle failures, each as a `DIError` subclass:
+
+- **Module names must be PascalCase identifiers** (`InvalidModuleNameError`).
+- **Entry names must be identifiers** (`InvalidEntryNameError`).
+- **Duplicate entry and module names** are rejected (`DuplicateEntryNameError`, `DuplicateModuleNameError`).
+- **Only modules created by `createModule` are accepted** (`ForeignModuleError`).
 
 ### Captive dependencies
 
@@ -390,18 +395,20 @@ A singleton cannot depend on a scoped entry — it would outlive the scope it ca
 
 ```ts
 const Infra = createModule("Infra", (m) =>
-  m.scoped("request", () => new RequestContext()).single("service", (r) => new Service(r.Infra.request())),
+  m
+    .scoped("request", () => new RequestContext())
+    .single("service", (r) => {
+      const request = r.Infra.request();
+      return new Service(request);
+    }),
 );
 ```
 
 Throws `CaptiveDependencyError` on resolution.
 
-### Missing, duplicate, and foreign
+### Missing and provider failures
 
 - resolving an entry with no provider throws `MissingDependencyError`
-- a duplicate entry name within a module throws `DuplicateEntryNameError`
-- two exposed modules sharing a name throws `DuplicateModuleNameError`
-- passing anything not made by `createModule` throws `ForeignModuleError`
 - a provider that throws during construction is wrapped in `ProviderExecutionError` (unless it already is a framework error)
 
 ## Known limitations
@@ -466,7 +473,7 @@ function createModule(name, { uses }, setup): ComposedModule;
 
 `name` must be PascalCase. `setup` receives a builder and must **return the chain**. With `{ uses }`, the used modules' entries are available in every provider resolver under their module names.
 
-Builder methods — each takes `(entryName, provider, options?)` and returns the builder:
+Builder methods — each takes `(entryName, provider, options?)` and returns the next builder in the chain:
 
 ```ts
 m.single(name, provider, options?);       // options: { dispose?, eager? }
@@ -480,6 +487,8 @@ m.scopedAsync(name, provider, options?);  // options: { dispose? }
 ```
 
 `dispose: (instance: T) => void | Promise<void>` registers teardown; `eager: true` (singletons only) marks the entry for `start()`.
+
+Sync methods (`single`, `factory`, `scoped`) receive a resolver with only sync entries. Async methods (`singleAsync`, `factoryAsync`, `scopedAsync`) receive a resolver with both sync and async entries. Accessors mirror the mode: sync entries are `() => T`; async entries are `() => Promise<T>`.
 
 ### `createContainer`
 
@@ -509,6 +518,8 @@ const fake = SomeModule.override((o) =>
 ```
 
 Replaces entries of the module it was derived from. `with` targets sync entries, `withAsync` async ones; entry names, value types, and modes are checked against the original. Lifetime is inherited. Pass the result into `createContainer`.
+
+An override must replace at least one entry, and duplicate replacements are rejected.
 
 ## License
 
