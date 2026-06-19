@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createAsyncToken, createAccessors, createModule, createSyncToken } from "../../src/internal";
-import { type AsyncToken, DisposedContainerError, type Accessors, type Token } from "../../src/internal";
 import { delay } from "../helpers";
+import { Container, createAsyncToken, createAccessors, createModule, createSyncToken } from "../internal-api";
+import { type AsyncToken, DisposedContainerError, type Accessors, type Token } from "../internal-api";
 
 describe("accessors", () => {
   it("sync accessor resolves through the container and honors singleton caching", () => {

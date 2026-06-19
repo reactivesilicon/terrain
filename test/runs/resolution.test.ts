@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createAsyncToken, createModule, createSyncToken } from "../../src/internal";
+import { Container, createAsyncToken, createModule, createSyncToken } from "../internal-api";
 
 describe("resolution", () => {
   it("providers receive a resolver and can pull dependencies", () => {

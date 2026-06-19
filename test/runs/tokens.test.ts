@@ -3,7 +3,7 @@ import { inspect } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import { MissingDependencyError } from "../../src";
-import { Container, createAsyncToken, createModule, createSyncToken } from "../../src/internal";
+import { Container, createAsyncToken, createModule, createSyncToken } from "../internal-api";
 
 describe("tokens", () => {
   it("toString carries mode, debug id, and description", () => {

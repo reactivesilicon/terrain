@@ -8,8 +8,8 @@ import {
   MissingDependencyError,
   ModuleOwnershipError,
 } from "../../src";
-import { Container, createModule, createAsyncToken, createSyncToken } from "../../src/internal";
 import { delay, ignore } from "../helpers";
+import { Container, createModule, createAsyncToken, createSyncToken } from "../internal-api";
 
 describe("lifecycle: load", () => {
   it("duplicate definition is rejected without override", async () => {

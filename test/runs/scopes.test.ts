@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createModule, createSyncToken } from "../../src/internal";
-import { DisposedContainerError } from "../../src/internal";
+import { Container, createModule, createSyncToken } from "../internal-api";
+import { DisposedContainerError } from "../internal-api";
 
 describe("scopes", () => {
   it("createScope inherits parent definitions", () => {

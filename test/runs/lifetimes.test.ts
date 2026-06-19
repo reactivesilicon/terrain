@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createModule, createSyncToken } from "../../src/internal";
+import { Container, createModule, createSyncToken } from "../internal-api";
 
 describe("lifetimes", () => {
   it("singleton returns the same instance", () => {

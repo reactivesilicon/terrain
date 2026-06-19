@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { DisposedContainerError } from "../../src";
-import { Container, createModule, createAsyncToken, createSyncToken } from "../../src/internal";
 import { delay } from "../helpers";
+import { Container, createModule, createAsyncToken, createSyncToken } from "../internal-api";
 
 describe("disposal", () => {
   it("disposes in reverse creation order", async () => {
