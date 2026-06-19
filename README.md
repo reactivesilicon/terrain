@@ -4,7 +4,7 @@
 
 A pragmatic TypeScript dependency injection container.
 
-No decorators. No reflection. No runtime dependencies. Just a small, explicit container with typed tokens, modules, scopes, async providers, deterministic disposal, and lifecycle safety — where wrong wiring fails loudly, and as much of it as possible fails at compile time.
+No decorators. No reflection. No runtime dependencies. You define modules by name, declare what each one uses, and compose them into a container. Dependencies are resolved through typed namespaces — `app.Data.users()` returns a fully typed value, with no tokens, no casts, and no manual wiring. Wrong wiring fails loudly, and as much of it as possible fails at compile time.
 
 ## Installation
 
@@ -22,14 +22,13 @@ npm install terrain-di
 
 - [Why terrain?](#why-terrain)
 - [Quick start](#quick-start)
-- [Tokens](#tokens)
 - [Modules](#modules)
-- [Lifetimes](#lifetimes) · [withScope](#withscope)
-- [Async providers](#async-providers) · [Eager initialization](#eager-initialization)
-- [Sync and async resolvers](#sync-and-async-resolvers)
-- [Lazy injection](#lazy-injection) · [Accessors](#accessors)
-- [Disposal](#disposal) · [Lifecycle semantics](#lifecycle-semantics)
-- [Unload and hot-swap](#unload-and-hot-swap) · [Testing with overrides](#testing-with-overrides)
+- [Composition with `uses`](#composition-with-uses)
+- [Resolvers and namespaces](#resolvers-and-namespaces)
+- [Lifetimes](#lifetimes)
+- [Async entries](#async-entries) · [Eager initialization](#eager-initialization)
+- [Scopes](#scopes) · [Disposal](#disposal)
+- [Testing with overrides](#testing-with-overrides)
 - [Guardrails](#guardrails) · [Known limitations](#known-limitations)
 - [Error types](#error-types) · [API](#api)
 
@@ -37,531 +36,380 @@ npm install terrain-di
 
 `terrain` is designed for TypeScript projects that want dependency injection without runtime magic.
 
-**Type safety beyond `get<T>()`:**
+**No tokens, no casts:**
 
-- typed tokens — `get(token)` returns `T`, no casts
-- the sync/async split is compile-time: `get()` rejects async tokens, `getAsync()` rejects sync ones
-- per-definition options (`dispose`, `eager`) typed to the token's value
+- modules are named; entries are named; resolution reads like an API: `app.Infra.logger()`
+- types flow from the providers themselves — annotate a provider's return type and that type appears everywhere the entry is used, with no `get<T>()` and no token plumbing
+- the sync/async split is compile-time: a sync provider can only reach sync entries; an async entry resolves to a `Promise`
+
+**Composition that the types enforce:**
+
+- a module declares the modules it `uses`; their entries become available under their names inside its providers
+- wiring is transitive (a used module is loaded automatically) but **exposure is explicit** — only the modules you hand to `createContainer` get a public namespace, so layers stay isolated by construction
+- a module can only `uses` modules that already exist, so cross-module cycles are unwritable; a provider can only reach entries defined before it, so in-module cycles are unwritable
 
 **Lifecycle, handled:**
 
 - singleton, factory, and scoped lifetimes; sync and async providers
-- hierarchical scopes for per-request work (`createScope` / `withScope`)
-- explicit, per-definition disposal in reverse creation order
-- eager boot (`{ eager: true }` + `container.start()`) so connections fail at startup, not on the first request
-- safe module unload/hot-swap
+- request scopes (`app.scope(...)`) that are always disposed
+- explicit, per-entry disposal in reverse creation order
+- eager boot (`{ eager: true }` + `app.start()`) so connections fail at startup, not on the first request
 
 **Wrong wiring fails loudly:**
 
-- circular and captive dependency detection
-- shadowing and duplicate-definition rejection
-- unload refuses to evict definitions that live instances still depend on
-- in-flight async work that outlives a teardown is orphaned and disposed, never leaked into a dead container
-
-**Call-site ergonomics:**
-
-- lazy getters (`inject` / `injectAsync`) and token-free accessors (`createAccessors`)
+- captive-dependency detection (a singleton may not depend on a scoped entry)
+- duplicate entry names, duplicate module names, and non-identifier names are rejected
+- only modules made by `createModule` are accepted — structural look-alikes throw
 
 ## Quick start
 
 ```ts
-import { Container, createModule, createSyncToken } from "terrain-di";
+import { createContainer, createModule } from "terrain-di";
 
-class Logger {
-  info(message: string): void {
-    console.log(message);
-  }
+interface Logger {
+  info(message: string): void;
 }
 
-class UserService {
-  constructor(private readonly logger: Logger) {}
+// A module is named, and so is each of its entries. The provider's return
+// type is the entry's type — no token, no annotation needed at the call site.
+const Infra = createModule("Infra", (m) =>
+  m.single("logger", (): Logger => ({
+    info: (message) => console.log(message),
+  })),
+);
 
-  createUser(name: string): void {
-    this.logger.info(`Created user: ${name}`);
-  }
-}
+// Data declares that it uses Infra. Inside its providers, Infra's entries are
+// available under `r.Infra`.
+const Data = createModule("Data", { uses: [Infra] }, (m) =>
+  m.single("users", (r) => {
+    const logger = r.Infra.logger();
+    return {
+      createUser(name: string) {
+        logger.info(`Created user: ${name}`);
+      },
+    };
+  }),
+);
 
-// Tokens: typed handles, defined once next to the wiring.
-const LoggerToken = createSyncToken<Logger>("Logger");
-const UserServiceToken = createSyncToken<UserService>("UserService");
+// Compose. Passing Data wires Infra transitively; passing Infra too exposes
+// its namespace on the container.
+const app = createContainer(Infra, Data);
 
-const appModule = createModule((module) => {
-  module.single(LoggerToken, () => new Logger());
+app.Data.users().createUser("Ada"); // typed, token-free
+app.Infra.logger().info("done");
 
-  module.single(UserServiceToken, (resolver) => {
-    return new UserService(resolver.get(LoggerToken));
-  });
-});
-
-const container = new Container();
-container.load(appModule);
-
-// Consumers get named, fully typed accessors — no tokens at call sites.
-const app = container.accessors({
-  logger: LoggerToken,
-  users: UserServiceToken,
-});
-
-app.users().createUser("Ada");
-app.logger().info("done");
+await app.dispose();
 ```
 
-Tokens stay a wiring detail inside the composition root; the rest of the code calls `app.users()` and gets a typed `UserService`. (Resolving directly also works: `container.get(UserServiceToken)`.)
-
-## Tokens
-
-Dependencies are identified by typed tokens.
-
-```ts
-import { createSyncToken, createAsyncToken } from "terrain-di";
-
-const ConfigToken = createSyncToken<{ databaseUrl: string }>("Config");
-const DatabaseToken = createAsyncToken<Database>("Database");
-```
-
-The token carries the TypeScript type of the dependency:
-
-```ts
-const config = container.get(ConfigToken);
-
-// config is typed as:
-// { databaseUrl: string }
-```
-
-A token also carries its resolution mode. `createSyncToken` makes a `Token<T>` for
-synchronous providers, resolved with `get`. `createAsyncToken` makes an
-`AsyncToken<T>` for async providers, resolved with `getAsync`. The two are not
-interchangeable: passing an async token to `get` (or registering it with a sync
-builder method) is a compile-time error.
+Module names are the namespaces; entry names are the accessors. Everything in between — tokens, registration, resolution — is handled internally.
 
 ## Modules
 
-Modules group dependency definitions. They can only be created through `createModule()` — the type system rejects hand-built look-alikes.
+A module groups named entries. It can only be created through `createModule` — the type system and runtime both reject hand-built look-alikes (`ForeignModuleError`).
 
 ```ts
-const appModule = createModule((module) => {
-  module.single(ConfigToken, () => ({
-    databaseUrl: "postgres://localhost/app",
-  }));
+const Infra = createModule("Infra", (m) =>
+  m
+    .single("config", () => ({ databaseUrl: "postgres://localhost/app" }))
+    .single("logger", (): Logger => new ConsoleLogger()),
+);
+```
+
+**The chain is the contract.** Each builder call returns a new builder whose type carries the entries registered so far. Keep `setup` a single returned chain — that is how types accumulate. Capturing the builder and registering imperatively (inside an `if`, say) works at runtime but is invisible to the types:
+
+```ts
+// Do this — one returned chain.
+createModule("Infra", (m) => m.single("a", ...).single("b", ...));
+
+// Not this — the entries won't be typed.
+createModule("Infra", (m) => {
+  m.single("a", ...);
+  if (cond) m.single("b", ...);
 });
 ```
 
-Load a module into a container:
+**Module names must be PascalCase; entry names must be valid identifiers.** Module names are the namespaces and the container's own API (`scope`, `start`, `dispose`) is lowercase, so a namespace can never collide with a method — there is no reserved-word list to remember. Both rules are compile-time errors and runtime backstops (`InvalidModuleNameError`, `InvalidEntryNameError`).
+
+## Composition with `uses`
+
+A module lists the modules it depends on in `{ uses: [...] }`. Their entries then appear, under their module names, in this module's provider resolvers.
 
 ```ts
-const container = new Container();
-
-container.load(appModule);
+const Domain = createModule("Domain", { uses: [Data] }, (m) =>
+  m.single("userService", (r) => ({
+    getUser: (id: string) => r.Data.users().find(id),
+  })),
+);
 ```
 
-Unload a module:
+**Wiring is transitive; exposure is explicit.** When you compose a container, every `uses` dependency is loaded automatically — `Domain` pulls in `Data`, which pulls in `Infra`. But only the modules you pass to `createContainer` get a public namespace:
 
 ```ts
-await container.unload(appModule);
+const app = createContainer(Domain); // Data and Infra are wired, but hidden
+
+app.Domain.userService().getUser("1"); // ok
+app.Data; // type error — Data is wired but not exposed
 ```
 
-A module can only be unloaded from the container it was loaded into, and only by the module object that loaded the definitions. After an override, unload the replacement module — a stale module object is rejected with `ModuleOwnershipError`.
+This makes layer boundaries a compile-time fact: an outer layer cannot reach past the surface a module chose to expose. Pass the lower modules too if you want their namespaces:
+
+```ts
+const app = createContainer(Infra, Data, Domain); // all three exposed
+```
+
+**`uses` only accepts modules that already exist**, so a module can never (transitively) depend on itself — cross-module cycles are unwritable.
+
+A module used by two others at different versions is fine: each importer's `r.Core` resolves to the exact module it imported. Only exposing two modules with the *same name* on one container conflicts (`DuplicateModuleNameError`).
+
+## Resolvers and namespaces
+
+The resolver a provider receives is namespaces all the way down — one uniform call shape, identical to the container view:
+
+- **imported modules** appear under their names: `r.Infra.logger()`
+- **the module's own earlier entries** appear under its own name: `r.Data.cache()`
+
+```ts
+const Data = createModule("Data", { uses: [Infra] }, (m) =>
+  m
+    .single("cache", () => new Map<string, string>())
+    .single("users", (r) => new UserRepo(r.Data.cache(), r.Infra.logger())),
+);
+```
+
+`users` can read `r.Data.cache()` because `cache` was defined before it. Referencing an entry defined *later* in the chain is a type error — this is what makes in-module cycles impossible to write.
+
+**Sync providers see only sync entries.** A `single` / `factory` / `scoped` provider's resolver exposes only the synchronous entries of its imports. Async entries are reachable only from async providers, so async construction can never hide behind a synchronous call:
+
+```ts
+const Infra = createModule("Infra", (m) =>
+  m
+    .single("logger", (): Logger => new ConsoleLogger())
+    .singleAsync("config", async () => loadConfig()),
+);
+
+createModule("Data", { uses: [Infra] }, (m) =>
+  m.single("users", (r) => {
+    r.Infra.logger(); // ok — sync entry
+    r.Infra.config(); // type error — async entry, unreachable from a sync provider
+    return new UserRepo();
+  }),
+);
+```
 
 ## Lifetimes
 
-### Singleton
+Each entry has a lifetime, chosen by the builder method.
 
-One instance for the whole tree, cached on the container that owns the definition.
+### Singleton — `single` / `singleAsync`
 
-```ts
-module.single(LoggerToken, () => new Logger());
-```
-
-The same instance is returned every time:
+One instance for the whole container, created on first use and cached.
 
 ```ts
-const a = container.get(LoggerToken);
-const b = container.get(LoggerToken);
-
-console.log(a === b); // true
-```
-
-### Factory
-
-A new instance is created on every resolution.
-
-```ts
-module.factory(RequestIdToken, () => crypto.randomUUID());
-```
-
-Each call creates a new value:
-
-```ts
-const a = container.get(RequestIdToken);
-const b = container.get(RequestIdToken);
-
-console.log(a === b); // false
-```
-
-### Scoped
-
-One instance per scope.
-
-```ts
-module.scoped(RequestContextToken, () => new RequestContext());
+m.single("logger", () => new Logger());
 ```
 
 ```ts
-const scopeA = container.createScope();
-const scopeB = container.createScope();
-
-const a1 = scopeA.get(RequestContextToken);
-const a2 = scopeA.get(RequestContextToken);
-const b1 = scopeB.get(RequestContextToken);
-
-console.log(a1 === a2); // true
-console.log(a1 === b1); // false
+app.Infra.logger() === app.Infra.logger(); // true
 ```
 
-Every container is a scope; the root is simply the outermost one. Resolving a scoped token directly on the root is legal and caches the instance on the root — where it lives until the root is disposed, making it indistinguishable from a singleton. The distinction between the two lifetimes is _where the cache lives_: `single` is one instance per tree, cached on the owning container; `scoped` is one instance per **resolving** container, each holding its own copy.
+### Factory — `factory` / `factoryAsync`
 
-Dispose a scope when finished:
+A new instance on every resolution.
 
 ```ts
-await scopeA.dispose();
-await scopeB.dispose();
+m.factory("requestId", () => crypto.randomUUID());
 ```
 
-## `withScope`
-
-Use `withScope` to create a temporary scope that is always disposed.
-
 ```ts
-await container.withScope(async (scope) => {
-  const context = scope.get(RequestContextToken);
-
-  // use scoped dependencies here
-});
+app.Infra.requestId() === app.Infra.requestId(); // false
 ```
 
-If the body throws and disposal also throws, `withScope` throws an `AggregateError` containing both failures.
+### Scoped — `scoped` / `scopedAsync`
 
-## Async providers
-
-Async providers use async tokens and explicit async registration methods.
+One instance per scope (see [Scopes](#scopes)).
 
 ```ts
-const DatabaseToken = createAsyncToken<Database>("Database");
+m.scoped("requestContext", () => new RequestContext());
+```
 
-const dbModule = createModule((module) => {
-  module.singleAsync(DatabaseToken, async () => {
+A scoped entry resolved on the root container caches there until the root is disposed; resolved inside a scope, each scope holds its own instance.
+
+## Async entries
+
+Async entries use the `*Async` builder methods and resolve to a `Promise`. The accessor's return type reflects this automatically — sync entries are `() => T`, async entries are `() => Promise<T>`.
+
+```ts
+const Infra = createModule("Infra", (m) =>
+  m.singleAsync("database", async () => {
     const db = new Database();
-
     await db.connect();
-
     return db;
-  });
-});
+  }),
+);
+
+const app = createContainer(Infra);
+
+const db = await app.Infra.database(); // () => Promise<Database>
 ```
 
-Resolve async providers with `getAsync`:
-
-```ts
-const db = await container.getAsync(DatabaseToken);
-```
-
-Calling `get` with an async token is a compile-time error. For untyped
-callers that bypass the type system, the runtime still throws
-`AsyncProviderError` (and `getAsync` on a sync definition throws
-`SyncProviderError`).
-
-Available async registration methods (each requires a token from `createAsyncToken`):
-
-```ts
-module.singleAsync(databaseToken, async (resolver) => value);
-module.factoryAsync(connectionToken, async (resolver) => value);
-module.scopedAsync(transactionToken, async (resolver) => value);
-```
+The async builder methods are `singleAsync`, `factoryAsync`, and `scopedAsync`. An async provider's resolver can reach both sync and async entries of its imports.
 
 ## Eager initialization
 
-Resolution is lazy: an instance is constructed the first time its token is resolved. For work that must finish at boot — database connections, cache warmups — mark the singleton `eager` and call `start()` before serving traffic:
+Resolution is lazy: an entry is constructed the first time it is resolved. For work that must finish at boot — database connections, cache warmups — mark a singleton `eager` and call `start()` before serving traffic:
 
 ```ts
-const dbModule = createModule((module) => {
-  module.singleAsync(DatabaseToken, async () => connect(), {
+const Infra = createModule("Infra", (m) =>
+  m.singleAsync("database", async () => connect(), {
     eager: true,
     dispose: (db) => db.close(),
-  });
-});
+  }),
+);
 
-container.load(dbModule);
-await container.start(); // constructs all eager singletons, in parallel
+const app = createContainer(Infra);
+await app.start(); // constructs every eager singleton, in parallel
 server.listen(3000); // first request hits warm caches
 ```
 
-`start()` resolves every eager definition loaded on that container, in parallel, and rejects with an `AggregateError` if any construction fails — failures surface at boot, not on the first request. It is idempotent; already-constructed singletons are untouched, so it is safe to call again after loading more modules.
+`start()` resolves every eager entry in the container, in parallel, and rejects with an `AggregateError` if any construction fails — failures surface at boot, not on the first request. It is idempotent.
 
-Because eager construction happens at `start()` rather than at `load()`, the testing story is unaffected: load overrides first, then start.
+Only `single` and `singleAsync` accept `eager` — factories cache nothing, and a scoped entry has no scope to construct into at boot. Both misuses are compile-time errors.
 
-Only `single` and `singleAsync` accept `eager` — factories cache nothing, and a scoped definition has no scope to construct into at boot. Both misuses are compile-time errors.
+## Scopes
 
-## Sync and async resolvers
+A scope is a child of the container that gives scoped entries their own instances and can be disposed independently — ideal for per-request work.
 
-Synchronous providers receive a sync resolver:
+The callback form creates a scope, runs your work, and **always disposes it** afterwards (returning your work's result):
 
 ```ts
-module.single(ServiceToken, (resolver) => {
-  return new Service(resolver.get(LoggerToken));
+const user = await app.scope(async (req) => {
+  return req.Domain.userService().getUser("1");
 });
 ```
 
-Async providers receive an async resolver:
+If the body throws and disposal also throws, `scope` throws an `AggregateError` containing both. Scopes nest — a request scope can open transaction sub-scopes with `req.scope(...)`.
+
+The no-argument form returns a scope view you dispose yourself:
 
 ```ts
-module.singleAsync(ServiceToken, async (resolver) => {
-  const db = await resolver.getAsync(DatabaseToken);
-
-  return new Service(db);
-});
+const req = app.scope();
+try {
+  req.Domain.userService().getUser("1");
+} finally {
+  await req.dispose();
+}
 ```
-
-Sync providers do not receive `getAsync`. This prevents accidentally hiding async construction behind a sync API.
-
-Both resolvers expose `has(token)` for probing optional dependencies:
-
-```ts
-module.single(MetricsToken, (resolver) => {
-  return new Metrics(resolver.has(StatsdToken) ? resolver.get(StatsdToken) : null);
-});
-```
-
-Within a resolver, `has(t)` implies `t` is resolvable from it — so a sync resolver's `has` accepts only sync tokens, while an async resolver's accepts both kinds.
-
-## Lazy injection
-
-Use `inject` to create a lazy getter.
-
-```ts
-const getLogger = container.inject(LoggerToken);
-
-const logger = getLogger();
-```
-
-Use `injectAsync` for async dependencies.
-
-```ts
-const getDatabase = container.injectAsync(DatabaseToken);
-
-const database = await getDatabase();
-```
-
-The lazy getter does not cache independently. It always resolves through the container, so factory semantics are preserved.
-
-## Accessors
-
-Accessors give consumers named, typed entry points instead of tokens. Tokens stay a wiring detail; call sites read like an API. This is the intended way to consume a terrain container.
-
-```ts
-const app = container.accessors({
-  logger: LoggerToken, // sync token  -> app.logger(): Logger
-  db: DatabaseToken, // async token -> app.db(): Promise<Database>
-});
-
-app.logger().info("hello");
-const db = await app.db();
-```
-
-(`createAccessors(container, spec)` is the equivalent standalone form.)
-
-The return type of each accessor is derived from the token kind: sync tokens produce `() => T`, async tokens produce `() => Promise<T>`.
-
-Accessors are lazy `inject`-style getters: each call resolves through the container, honoring the definition's lifetime (a `factory` member returns a fresh value per call). They can be created before their modules are loaded, and every accessor throws once the container is disposed.
-
-For per-request work, build the accessors over a scope:
-
-```ts
-await root.withScope(async (scope) => {
-  const req = scope.accessors({ handler: HandlerToken });
-  return req.handler().handle(userId);
-});
-```
-
-Accessors are best kept at the edges — composition roots, route handlers, CLI entry points. Business logic should still receive its dependencies as parameters rather than reaching into an accessor object, so its dependencies stay visible in its signature.
 
 ## Disposal
 
-Teardown is registered per definition with the `{ dispose }` option. The container disposes exactly what you registered, how you registered it — an instance that merely happens to have a `dispose()` method is never touched.
+Teardown is registered per entry with the `{ dispose }` option. The container disposes exactly what you registered — an instance that merely happens to have a `dispose()` method is never touched.
 
 ```ts
-module.single(DbToken, () => new Pool(config), {
+m.single("pool", () => new Pool(config), {
   dispose: (pool) => pool.end(),
 });
 ```
 
-This works with any teardown method name (`close`, `destroy`, `end`, `disconnect`, …), and the disposer is typed to the token's value. A disposer may be async even for a sync token — disposal always runs in an async context:
+This works with any teardown method name (`close`, `destroy`, `end`, …), and the disposer is typed to the entry's value. A disposer may be async even for a sync entry — disposal always runs in an async context:
 
 ```ts
 type Disposer<T> = (instance: T) => void | Promise<void>;
 ```
 
-Disposal runs in reverse creation order.
-
 ```ts
-await container.dispose();
+await app.dispose();
 ```
 
-This helps dependents dispose before their dependencies.
-
-Definitions without `{ dispose }` are simply dropped at teardown. Factory instances are caller-owned: their disposer is only used when an in-flight async factory result is orphaned by a concurrent teardown.
-
-Each definition's disposer runs only when that definition itself is torn down. If two tokens share one instance (an alias definition returning `resolver.get(Owner)`), unloading the alias runs the alias's disposer but never the owner's — the shared resource survives. Register resource-destroying cleanup only on the definition that created the resource; an alias's disposer should release just what the alias itself added.
-
-If multiple disposals fail, the container throws an `AggregateError`.
-
-## Lifecycle semantics
-
-`terrain` has strict lifecycle rules.
-
-Only one lifecycle operation may run per container tree at a time:
-
-```ts
-container.load(module);
-await container.unload(module);
-await container.dispose();
-```
-
-Concurrent lifecycle operations reject with `LifecycleOperationError`.
-
-Disposing a parent container disposes all child scopes.
-
-A disposed ancestor makes the entire subtree unusable. Child scopes cannot continue resolving local dependencies after their parent begins disposal.
-
-`dispose()` is idempotent. Calling it more than once is safe.
-
-During teardown, every in-flight async resolution — singleton, scoped, or factory — is awaited. A provider that finishes after its token was unloaded or its container tree was disposed has its result treated as an orphan: it is disposed via its registered disposer (failures reported to `onDisposeError`), and the caller receives `DisposedContainerError` instead of an instance from a dead container.
-
-## Unload and hot-swap
-
-You can unload a module and load a replacement.
-
-```ts
-await container.unload(oldModule);
-
-container.load(newModule);
-```
-
-Unload is refused with `DependentInstanceError` while a live instance outside the module depends on one of its definitions — otherwise that instance would be left holding a disposed dependency. Unload or dispose the dependents first (or unload everything in one module). The check is conservative: any token a provider resolved during construction counts as captured. Its limit: references held by application code (a top-level `get()` result) cannot be tracked.
-
-A definition can also be replaced in place, without unloading:
-
-```ts
-container.load(replacementModule, { override: true });
-```
-
-Override is only legal while the token is unused — if it already has a cached or in-flight instance anywhere in the tree, the load is rejected with `DefinitionInUseError`, so wiring can never be swapped under a live object graph.
-
-## Guardrails
-
-### Missing dependencies
-
-```ts
-container.get(MissingToken);
-```
-
-Throws `MissingDependencyError`.
-
-### Circular dependencies
-
-```ts
-const AToken = createSyncToken<A>("A");
-const BToken = createSyncToken<B>("B");
-
-const appModule = createModule((module) => {
-  module.single(AToken, (resolver) => new A(resolver.get(BToken)));
-  module.single(BToken, (resolver) => new B(resolver.get(AToken)));
-});
-```
-
-Throws `CircularDependencyError`.
-
-### Captive dependencies
-
-A singleton cannot depend on a scoped dependency.
-
-```ts
-module.scoped(RequestToken, () => new RequestContext());
-
-module.single(ServiceToken, (resolver) => {
-  return new Service(resolver.get(RequestToken));
-});
-```
-
-Throws `CaptiveDependencyError`.
-
-This prevents a singleton from capturing a dependency that should only live for a scope.
-
-### Shadowed definitions
-
-A token cannot be defined in both an ancestor and descendant container.
-
-```ts
-root.load(rootModule);
-scope.load(scopeModuleWithSameToken);
-```
-
-Throws `ShadowedDefinitionError`.
-
-This keeps resolution ownership predictable.
+Disposal runs in **reverse creation order**, so dependents are torn down before their dependencies. Disposing the container cascades to all of its scopes. `dispose()` is idempotent. If multiple disposers fail, the container throws an `AggregateError`.
 
 ## Testing with overrides
 
-Load the real wiring, then override just the tokens the test needs to fake — module granularity can follow your domain, not your mocks:
+Derive an override from a module to replace some of its entries, then pass the override into `createContainer` alongside the modules. The override rewires; it never adds a namespace of its own.
 
 ```ts
-const fakes = createModule((module) => {
-  module.single(ApiClientToken, () => new FakeApiClient());
-  module.single(ClockToken, () => ({ now: () => 1234 }));
-});
+const FakeInfra = Infra.override((o) =>
+  o
+    .with("logger", (): Logger => ({ info: () => {} })) // sync entries
+    .withAsync("database", async () => fakeDb, { eager: true }), // async entries
+);
 
-const container = new Container();
-container.load(appModule); // the real thing, all 30 tokens
-container.load(fakes, { override: true }); // replace exactly two of them
-await container.start(); // eager definitions construct the fakes
+const app = createContainer(Domain, FakeInfra); // real wiring + the fake
+app.Domain.userService().getUser("1"); // runs against the fake logger and database
 ```
 
-This works because resolution is lazy and eager construction happens at `start()`, not `load()` — at override time nothing has been built yet. Overriding after something resolved is rejected (`DefinitionInUseError`); build a fresh container per test, or `unload` first.
+Overrides are fully checked against the original: entry names, value types, and the sync/async mode must match (`with` for sync entries, `withAsync` for async). The lifetime is inherited from the original; `eager` in an override requires the original to be a singleton.
+
+An override applies to **every** importer of the target module — overriding `Infra` affects `Data` and `Domain` too, even though they're separate modules. That's the point: you fake one thing and the whole graph picks it up. Overriding works on transitive, unexposed modules as well. An override whose target isn't part of the container's wiring is rejected (`InvalidModuleUseError`).
+
+An override provider may resolve the module's *other* entries (`r.Infra.someOther()`), but fakes are expected to be self-contained — the original's imports are reachable at runtime but not surfaced in the override's types.
+
+## Guardrails
+
+Most wiring mistakes are caught at compile time:
+
+- **In-module cycles are unwritable** — a provider can only reference entries defined before it.
+- **Cross-module cycles are unwritable** — `uses` only accepts modules that already exist.
+- **Sync providers can't reach async entries** of their imports.
+- **Unknown module or entry names** are type errors.
+- **Module names must be PascalCase; entry names must be identifiers.**
+
+The rest are runtime guards, each a `DIError` subclass:
+
+### Captive dependencies
+
+A singleton cannot depend on a scoped entry — it would outlive the scope it captured.
+
+```ts
+const Infra = createModule("Infra", (m) =>
+  m
+    .scoped("request", () => new RequestContext())
+    .single("service", (r) => new Service(r.Infra.request())),
+);
+```
+
+Throws `CaptiveDependencyError` on resolution.
+
+### Missing, duplicate, and foreign
+
+- resolving an entry with no provider throws `MissingDependencyError`
+- a duplicate entry name within a module throws `DuplicateEntryNameError`
+- two exposed modules sharing a name throws `DuplicateModuleNameError`
+- passing anything not made by `createModule` throws `ForeignModuleError`
+- a provider that throws during construction is wrapped in `ProviderExecutionError` (unless it already is a framework error)
 
 ## Known limitations
 
-- **Cycles split across concurrent async resolutions deadlock instead of throwing.** Cycle detection rides each call's own resolution chain. If two concurrent `getAsync` calls each start one half of a cycle (A waiting on B's in-flight resolution while B waits on A's), neither chain contains the full loop, so no `CircularDependencyError` is raised and both promises hang. Cycles within a single resolution chain are always detected. A wait-for graph across in-flight resolutions may lift this in a future version.
-- **Unload safety cannot see references held outside the container.** Dependent tracking covers everything wired through providers, but a top-level `get()` result stored by application code is invisible — unloading its module leaves that reference holding a disposed instance.
-- **Dependent tracking is conservative.** A provider that resolves a token during construction is treated as having captured it, even if it only read a value and dropped the reference. False positives refuse a safe unload loudly; there are no false negatives within the container's wiring.
+- **Composition is static.** `createContainer` builds a fixed graph; there is no runtime unload or hot-swap of a composed container. Build a fresh container instead (this is also the testing model — a new container per test).
+- **Go-to-definition on `r.Infra.logger` lands on a mapped type**, not the provider. This is inherent to computed accessor types.
+- **The chain is the contract.** Imperative registration on a captured builder runs at runtime but is invisible to the types — keep `setup` a single returned chain.
 
 ## Error types
 
-`terrain` exports framework errors:
+`terrain` exports its framework errors:
 
 ```ts
 import {
-  AsyncProviderError,
   CaptiveDependencyError,
   CircularDependencyError,
-  DefinitionInUseError,
-  DependentInstanceError,
   DisposedContainerError,
-  DuplicateDefinitionError,
-  LifecycleOperationError,
+  DuplicateEntryNameError,
+  DuplicateModuleNameError,
+  ForeignModuleError,
+  InvalidEntryNameError,
+  InvalidModuleNameError,
+  InvalidModuleUseError,
   MissingDependencyError,
-  ModuleOwnershipError,
   ProviderExecutionError,
-  ShadowedDefinitionError,
-  SyncProviderError,
 } from "terrain-di";
 ```
 
-All framework errors extend `DIError`.
+All framework errors extend `DIError`:
 
 ```ts
 import { DIError, isFrameworkError } from "terrain-di";
 
 try {
-  container.get(Token);
+  app.Domain.userService().getUser("1");
 } catch (error) {
   if (error instanceof DIError) {
     // terrain-raised error
@@ -569,81 +417,62 @@ try {
 }
 ```
 
-`isFrameworkError(error)` is a predicate equivalent to `error instanceof DIError`. Useful when you want to check without importing the base class.
-
-Provider-thrown errors are wrapped in `ProviderExecutionError`, unless they are already framework errors.
+`isFrameworkError(error)` is a predicate equivalent to `error instanceof DIError`, useful when you'd rather not import the base class.
 
 ## API
-
-### Tokens
-
-```ts
-function createSyncToken<T>(description: string): Token<T>;
-function createAsyncToken<T>(description: string): AsyncToken<T>;
-function isAsyncToken(token: AnyToken<unknown>): token is AsyncToken<unknown>;
-```
-
-`Token<T>` resolves with `get`, `AsyncToken<T>` with `getAsync`; `AnyToken<T>` is their union, accepted where the mode does not matter (`has`). Tokens print readably (`String(token)`, `console.log`, `JSON.stringify`) with their mode, a debug id, and the description.
 
 ### `createModule`
 
 ```ts
-function createModule(setup: (builder: ModuleBuilder) => void): Module;
+function createModule(name, setup): ComposedModule;
+function createModule(name, { uses }, setup): ComposedModule;
 ```
 
-Registration methods — sync methods take a `Token`, async methods an `AsyncToken`:
+`name` must be PascalCase. `setup` receives a builder and must **return the chain**. With `{ uses }`, the used modules' entries are available in every provider resolver under their module names.
+
+Builder methods — each takes `(entryName, provider, options?)` and returns the builder:
 
 ```ts
-module.single(token, provider, options?); // options: { dispose?, eager? }
-module.singleAsync(token, provider, options?); // options: { dispose?, eager? }
+m.single(name, provider, options?);       // options: { dispose?, eager? }
+m.singleAsync(name, provider, options?);  // options: { dispose?, eager? }
 
-module.factory(token, provider, options?); // options: { dispose? }
-module.factoryAsync(token, provider, options?); // options: { dispose? }
+m.factory(name, provider, options?);      // options: { dispose? }
+m.factoryAsync(name, provider, options?); // options: { dispose? }
 
-module.scoped(token, provider, options?); // options: { dispose? }
-module.scopedAsync(token, provider, options?); // options: { dispose? }
+m.scoped(name, provider, options?);       // options: { dispose? }
+m.scopedAsync(name, provider, options?);  // options: { dispose? }
 ```
 
-`dispose: (instance: T) => void | Promise<void>` registers teardown; `eager: true` (singletons only) marks the definition for `container.start()`.
+`dispose: (instance: T) => void | Promise<void>` registers teardown; `eager: true` (singletons only) marks the entry for `start()`.
 
-### `Container`
+### `createContainer`
 
 ```ts
-const container = new Container();
-const container = new Container({ onDisposeError: (error) => console.error(error) });
+function createContainer(...parts): ContainerView;
 ```
 
-`onDisposeError` observes disposal failures of orphaned in-flight instances only — a resolution that finished after its token was already unloaded or its container disposed. Failures during normal `dispose()`/`unload()` surface in the `AggregateError` those methods throw instead.
+`parts` are modules and module overrides, mixed in one list. Modules passed here are exposed as namespaces; their `uses` dependencies are wired transitively but not exposed. Overrides rewire their target module without exposing a namespace.
+
+The returned view exposes one namespace per exposed module, plus:
 
 ```ts
-container.load(module); // sync; throws on duplicate/shadowed tokens
-container.load(module, { override: true }); // replace unused definitions in place
-await container.unload(module); // evict + dispose; refuses live dependents
-
-container.get(token); // Token<T> -> T
-await container.getAsync(asyncToken); // AsyncToken<T> -> Promise<T>
-container.has(anyToken); // either kind
-
-await container.start(); // construct eager singletons, in parallel
-
-container.inject(token); // () => T, lazy
-container.injectAsync(asyncToken); // () => Promise<T>, lazy
-
-container.accessors(spec); // named lazy accessors (see createAccessors)
-
-container.createScope(); // child Container
-await container.withScope(async (scope) => result); // auto-disposed; returns result
-
-await container.dispose(); // reverse-order teardown, cascades to scopes; idempotent
+app.start(); // Promise<void> — construct eager singletons, in parallel
+app.scope(); // ScopeView — dispose it yourself
+app.scope(async (view) => result); // Promise<result> — scope auto-disposed
+app.dispose(); // Promise<void> — reverse-order teardown, cascades to scopes; idempotent
 ```
 
-### `createAccessors`
+A `ScopeView` is the same shape minus `start()` — namespaces, `scope` (scopes nest), and `dispose`.
+
+### `Module.override`
 
 ```ts
-function createAccessors<S extends Record<string, AnyToken<unknown>>>(container: Container, spec: S): Accessors<S>;
+const fake = SomeModule.override((o) =>
+  o.with(entryName, provider, options?).withAsync(entryName, provider, options?),
+);
 ```
 
-Maps a name → token spec to typed lazy accessors: sync tokens become `() => T`, async tokens `() => Promise<T>`. `container.accessors(spec)` is the same operation as a method.
+Replaces entries of the module it was derived from. `with` targets sync entries, `withAsync` async ones; entry names, value types, and modes are checked against the original. Lifetime is inherited. Pass the result into `createContainer`.
 
 ## License
 
