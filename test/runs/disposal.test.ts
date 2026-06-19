@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createModule, createAsyncToken, createSyncToken } from "../../src";
 import { DisposedContainerError } from "../../src";
+import { Container, createModule, createAsyncToken, createSyncToken } from "../../src/internal";
 import { delay } from "../helpers";
 
 describe("disposal", () => {

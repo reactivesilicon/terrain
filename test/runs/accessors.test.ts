@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createAsyncToken, createAccessors, createModule, createSyncToken } from "../../src";
-import { type AsyncToken, DisposedContainerError, type Accessors, type Token } from "../../src";
+import { Container, createAsyncToken, createAccessors, createModule, createSyncToken } from "../../src/internal";
+import { type AsyncToken, DisposedContainerError, type Accessors, type Token } from "../../src/internal";
 import { delay } from "../helpers";
 
 describe("accessors", () => {

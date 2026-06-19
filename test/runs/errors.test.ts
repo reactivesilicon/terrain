@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createAsyncToken, createModule, createSyncToken, isAsyncToken } from "../../src";
+import { Container, createAsyncToken, createModule, createSyncToken, isAsyncToken } from "../../src/internal";
 import {
   type AsyncResolver,
   type AsyncToken,
@@ -13,7 +13,7 @@ import {
   ShadowedDefinitionError,
   SyncProviderError,
   type SyncResolver,
-} from "../../src";
+} from "../../src/internal";
 
 describe("errors: guardrails", () => {
   it("missing dependency throws MissingDependencyError", async () => {

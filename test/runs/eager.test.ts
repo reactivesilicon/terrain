@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createAsyncToken, createModule, createSyncToken } from "../../src";
 import { DisposedContainerError, type SingletonDefinitionOptions } from "../../src";
+import { Container, createAsyncToken, createModule, createSyncToken } from "../../src/internal";
 import { delay } from "../helpers";
 
 describe("eager start", () => {

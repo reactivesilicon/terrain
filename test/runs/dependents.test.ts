@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createAsyncToken, createModule, createSyncToken } from "../../src";
-import { DependentInstanceError, MissingDependencyError, type SyncResolver } from "../../src";
+import { Container, createAsyncToken, createModule, createSyncToken } from "../../src/internal";
+import { DependentInstanceError, MissingDependencyError, type SyncResolver } from "../../src/internal";
 import { delay, ignore } from "../helpers";
 
 describe("unload safety: dependents", () => {

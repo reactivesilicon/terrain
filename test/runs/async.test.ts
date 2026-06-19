@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createModule, createAsyncToken } from "../../src";
-import { AsyncProviderError, type Token } from "../../src";
+import { Container, createModule, createAsyncToken } from "../../src/internal";
+import { AsyncProviderError, type Token } from "../../src/internal";
 import { delay } from "../helpers";
 
 describe("async", () => {

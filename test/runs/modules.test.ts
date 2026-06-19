@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createAsyncToken, createModule, createSyncToken, Lifetimes } from "../../src";
 import { DuplicateDefinitionError, InvalidDefinitionError, ModuleOwnershipError } from "../../src";
+import { Container, createAsyncToken, createModule, createSyncToken, Lifetimes } from "../../src/internal";
 
 describe("modules", () => {
   it("multiple modules compose", () => {

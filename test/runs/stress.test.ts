@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createAsyncToken, createModule, createSyncToken, DIError } from "../../src";
-import type { AsyncToken, Module, Token } from "../../src";
+import { Container, createAsyncToken, createModule, createSyncToken, DIError } from "../../src/internal";
+import type { AsyncToken, Module, Token } from "../../src/internal";
 import { delay, ignore, random } from "../helpers";
 
 /**

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createModule, createAsyncToken, createSyncToken } from "../../src";
 import {
   DefinitionInUseError,
   DisposedContainerError,
@@ -9,6 +8,7 @@ import {
   MissingDependencyError,
   ModuleOwnershipError,
 } from "../../src";
+import { Container, createModule, createAsyncToken, createSyncToken } from "../../src/internal";
 import { delay, ignore } from "../helpers";
 
 describe("lifecycle: load", () => {
