@@ -9,8 +9,8 @@ import {
 import type { ModuleEntryDefinitionWithToken } from "./module-entry-definitions";
 
 export type ResolverNamespaces = {
-  (resolver: SyncResolver, includesAsyncEntries: false): Record<string, unknown>;
-  (resolver: AsyncResolver, includesAsyncEntries: true): Record<string, unknown>;
+  forSyncProvider(resolver: SyncResolver): Record<string, unknown>;
+  forAsyncProvider(resolver: AsyncResolver): Record<string, unknown>;
 };
 
 function singletonDefinitionOptions(options: SingletonDefinitionOptions<unknown> | undefined) {
@@ -35,7 +35,8 @@ export function toKernelDefinition(
 
   switch (entryDefinition.mode) {
     case TokenModes.Sync: {
-      const provider = (resolver: SyncResolver) => entryDefinition.provider(resolverNamespaces(resolver, false));
+      const provider = (resolver: SyncResolver) =>
+        entryDefinition.provider(resolverNamespaces.forSyncProvider(resolver));
       return {
         token: entryDefinition.token,
         async: false,
@@ -44,7 +45,8 @@ export function toKernelDefinition(
       } satisfies Definition<unknown>;
     }
     case TokenModes.Async: {
-      const provider = (resolver: AsyncResolver) => entryDefinition.provider(resolverNamespaces(resolver, true));
+      const provider = (resolver: AsyncResolver) =>
+        entryDefinition.provider(resolverNamespaces.forAsyncProvider(resolver));
       return {
         token: entryDefinition.token,
         async: true,

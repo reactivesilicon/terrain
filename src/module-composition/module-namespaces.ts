@@ -1,8 +1,14 @@
-import { type AccessorSpec, buildAccessorPrototype, instantiateAccessors } from "../accessors";
+import {
+  type AccessorPrototype,
+  type AccessorSpec,
+  buildAccessorPrototype,
+  buildSyncAccessorPrototype,
+  type SyncAccessorSpec,
+} from "../accessors";
 import { Container } from "../container/container";
 import { DuplicateModuleNameError } from "../errors";
 import { type AnyToken, isAsyncToken } from "../token";
-import type { AsyncResolver, SyncResolver } from "../types";
+import type { SyncResolver } from "../types";
 import type { ResolverNamespaces } from "./kernel-definition-transformer";
 import type { ModuleEntryName } from "./module-entry-definitions";
 import type { ComposedModuleInternals, NamespacePrototypes } from "./module-internals";
@@ -10,19 +16,19 @@ import type { ComposedModuleInternals, NamespacePrototypes } from "./module-inte
 export function buildNamespacePrototypes(
   tokensByEntryName: ReadonlyMap<ModuleEntryName, AnyToken<unknown>>,
 ): NamespacePrototypes {
-  const accessorSpecWithAsyncEntries: AccessorSpec = {};
-  const accessorSpecWithoutAsyncEntries: AccessorSpec = {};
+  const allEntries: AccessorSpec = {};
+  const syncEntries: SyncAccessorSpec = {};
 
   for (const [entryName, token] of tokensByEntryName) {
-    accessorSpecWithAsyncEntries[entryName] = token;
+    allEntries[entryName] = token;
     if (!isAsyncToken(token)) {
-      accessorSpecWithoutAsyncEntries[entryName] = token;
+      syncEntries[entryName] = token;
     }
   }
 
   return {
-    full: buildAccessorPrototype(accessorSpecWithAsyncEntries),
-    syncOnly: buildAccessorPrototype(accessorSpecWithoutAsyncEntries),
+    full: buildAccessorPrototype(allEntries),
+    syncOnly: buildSyncAccessorPrototype(syncEntries),
   };
 }
 
@@ -31,27 +37,25 @@ export function createResolverNamespaceBuilder(
   usedModules: readonly ComposedModuleInternals[],
   namespacePrototypes: NamespacePrototypes,
 ): ResolverNamespaces {
-  function buildResolverNamespaces(resolver: SyncResolver, includesAsyncEntries: false): Record<string, unknown>;
-  function buildResolverNamespaces(resolver: AsyncResolver, includesAsyncEntries: true): Record<string, unknown>;
-  function buildResolverNamespaces(
-    resolver: SyncResolver | AsyncResolver,
-    includesAsyncEntries: boolean,
+  function buildNamespaces<Source extends SyncResolver>(
+    ownPrototype: AccessorPrototype<Source>,
+    usedPrototype: (used: ComposedModuleInternals) => AccessorPrototype<Source>,
+    resolver: Source,
   ): Record<string, unknown> {
-    const namespacePrototypeKey = includesAsyncEntries ? "full" : "syncOnly";
     const namespaces: Record<string, unknown> = {};
-
-    for (const usedModule of usedModules) {
-      namespaces[usedModule.name] = instantiateAccessors(
-        usedModule.namespacePrototypes[namespacePrototypeKey],
-        resolver,
-      );
+    for (const used of usedModules) {
+      namespaces[used.name] = usedPrototype(used).instantiate(resolver);
     }
-
-    namespaces[moduleName] = instantiateAccessors(namespacePrototypes[namespacePrototypeKey], resolver);
+    namespaces[moduleName] = ownPrototype.instantiate(resolver);
     return Object.freeze(namespaces);
   }
 
-  return buildResolverNamespaces;
+  return {
+    forSyncProvider: (resolver) =>
+      buildNamespaces(namespacePrototypes.syncOnly, (used) => used.namespacePrototypes.syncOnly, resolver),
+    forAsyncProvider: (resolver) =>
+      buildNamespaces(namespacePrototypes.full, (used) => used.namespacePrototypes.full, resolver),
+  };
 }
 
 export function buildContainerNamespaces(
@@ -65,7 +69,7 @@ export function buildContainerNamespaces(
       throw new DuplicateModuleNameError(exposedModule.name);
     }
 
-    namespaces[exposedModule.name] = instantiateAccessors(exposedModule.namespacePrototypes.full, container);
+    namespaces[exposedModule.name] = exposedModule.namespacePrototypes.full.instantiate(container);
   }
 
   return namespaces;
