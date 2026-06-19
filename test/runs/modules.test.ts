@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createModule, createSyncToken } from "../../src";
-import { DuplicateDefinitionError, ModuleOwnershipError } from "../../src";
+import { DuplicateDefinitionError, InvalidDefinitionError, ModuleOwnershipError } from "../../src";
+import { Container, createAsyncToken, createModule, createSyncToken, Lifetimes } from "../internal-api";
 
 describe("modules", () => {
   it("multiple modules compose", () => {
@@ -113,5 +113,52 @@ describe("modules", () => {
     const c = new Container();
     c.load(mod);
     expect(() => c.load(mod)).toThrowError(DuplicateDefinitionError);
+  });
+
+  it("define() registers data-driven definitions the container resolves normally", async () => {
+    const S = createSyncToken<string>("defSync");
+    const A = createAsyncToken<number>("defAsync");
+    const mod = createModule((m) => {
+      m.define({ token: S, lifetime: Lifetimes.Singleton, async: false, provider: () => "via define" });
+      m.define({ token: A, lifetime: Lifetimes.Factory, async: true, provider: async () => 7 });
+    });
+    const c = new Container();
+    c.load(mod);
+    expect(c.get(S)).toBe("via define");
+    await expect(c.getAsync(A)).resolves.toBe(7);
+  });
+
+  it("define() rejects an eager non-singleton at runtime (and the type forbids it)", () => {
+    const T = createSyncToken<number>("defEager");
+    const smuggled = { token: T, lifetime: Lifetimes.Factory, async: false, provider: () => 1, eager: true } as const;
+    expect(() =>
+      createModule((m) => {
+        // @ts-expect-error -- eager is unwritable on non-singleton definitions
+        m.define(smuggled);
+      }),
+    ).toThrowError(InvalidDefinitionError);
+  });
+
+  it("define() rejects a duplicate token like the sugar methods do", () => {
+    const T = createSyncToken<number>("defDup");
+    expect(() =>
+      createModule((m) => {
+        m.define({ token: T, lifetime: Lifetimes.Singleton, async: false, provider: () => 1 });
+        m.define({ token: T, lifetime: Lifetimes.Singleton, async: false, provider: () => 2 });
+      }),
+    ).toThrowError(DuplicateDefinitionError);
+  });
+
+  it("define()d records are frozen at build time, so later mutation cannot affect the module", () => {
+    const T = createSyncToken<number>("defFreeze");
+    const record = { token: T, lifetime: Lifetimes.Singleton, async: false as const, provider: () => 1 };
+    const mod = createModule((m) => m.define(record));
+    expect(Object.isFrozen(record), "build freezes the given record in place").toBe(true);
+    expect(() => {
+      record.provider = () => 2;
+    }).toThrowError(TypeError);
+    const c = new Container();
+    c.load(mod);
+    expect(c.get(T)).toBe(1);
   });
 });

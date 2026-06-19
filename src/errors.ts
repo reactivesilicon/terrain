@@ -46,6 +46,13 @@ export class DisposedContainerError extends DIError {
   }
 }
 
+export class InvalidDefinitionError extends DIError {
+  constructor(definition: string) {
+    super(`Only singleton definitions can be eager (nothing else constructs at start()). Got: ${definition}`);
+    this.name = "InvalidDefinitionError";
+  }
+}
+
 export class DuplicateDefinitionError extends DIError {
   constructor(name: string) {
     super(`Definition already exists for token '${name}'. Load with { override: true } to replace it.`);
@@ -108,5 +115,50 @@ export class LifecycleOperationError extends DIError {
   constructor() {
     super("A container lifecycle operation (load/unload/dispose) is already in progress.");
     this.name = "LifecycleOperationError";
+  }
+}
+
+export class InvalidModuleNameError extends DIError {
+  constructor(name: string) {
+    super(
+      `Module name '${name}' must be PascalCase (an identifier starting with an uppercase letter); ` +
+        `the container view's lowercase API can then never collide with a module namespace.`,
+    );
+    this.name = "InvalidModuleNameError";
+  }
+}
+
+export class InvalidEntryNameError extends DIError {
+  constructor(entry: string, module: string) {
+    super(`Entry name '${entry}' in module '${module}' must be a valid identifier (dot-accessible).`);
+    this.name = "InvalidEntryNameError";
+  }
+}
+
+export class DuplicateEntryNameError extends DIError {
+  constructor(entry: string, module: string) {
+    super(`Duplicate accessor name '${entry}' in module '${module}'.`);
+    this.name = "DuplicateEntryNameError";
+  }
+}
+
+export class InvalidModuleUseError extends DIError {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidModuleUseError";
+  }
+}
+
+export class ForeignModuleError extends DIError {
+  constructor() {
+    super("Value is not a module created by createModule().");
+    this.name = "ForeignModuleError";
+  }
+}
+
+export class DuplicateModuleNameError extends DIError {
+  constructor(name: string) {
+    super(`Duplicate module name '${name}' in container.`);
+    this.name = "DuplicateModuleNameError";
   }
 }

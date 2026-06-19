@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createAsyncToken, createModule, createSyncToken, DIError } from "../../src";
-import type { AsyncToken, Module, Token } from "../../src";
 import { delay, ignore, random } from "../helpers";
+import { Container, createAsyncToken, createModule, createSyncToken, DIError } from "../internal-api";
+import type { AsyncToken, Module, Token } from "../internal-api";
 
 /**
  * Property/stress suite: random operation sequences against a container tree,

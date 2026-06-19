@@ -1,26 +1,29 @@
 /**
- * terrain — usage patterns
+ * terrain — the token kernel (advanced / internal)
  *
- * Run with:  bun examples/usage.ts
+ * Run with:  bun examples/engine.ts
  *
- * Each section is self-contained and prints what it demonstrates. Read top to
- * bottom; the patterns build on each other.
+ * This is the low-level engine BENEATH the composition layer: explicit tokens,
+ * a raw Container, get()/getAsync(), and per-definition wiring. The public API
+ * (createModule / createContainer — see examples/usage.ts) is built on top of
+ * this, and is what applications should use. Tokens and the Container are an
+ * internal detail of the package, not exported from its entry point — this file
+ * imports them by deep path on purpose, as a reference for the engine's full
+ * surface and guarantees.
  */
 
+import { createAccessors } from "../src/accessors";
+import { Container } from "../src/container/container";
 import {
-  Container,
-  createAsyncToken,
-  createAccessors,
-  createModule,
-  createSyncToken,
   CaptiveDependencyError,
   CircularDependencyError,
   DefinitionInUseError,
   LifecycleOperationError,
   ShadowedDefinitionError,
-  type AsyncResolver,
-  type SyncResolver,
-} from "../src";
+} from "../src/errors";
+import { createModule } from "../src/module";
+import { createAsyncToken, createSyncToken } from "../src/token";
+import type { AsyncResolver, SyncResolver } from "../src/types";
 
 const line = (title: string) => console.log(`\n=== ${title} ===`);
 
@@ -31,7 +34,7 @@ const line = (title: string) => console.log(`\n=== ${title} ===`);
 // A Token<T> is a typed handle. get(token) returns T with no casting. Tokens
 // are created once and shared (usually exported from a "tokens" module).
 
-async function lifetimes() {
+function lifetimes() {
   line("1. lifetimes: single / factory / scoped");
 
   interface Clock {
@@ -543,7 +546,7 @@ async function realisticApp() {
 // ───────────────────────────────────────────────────────────────────────────
 
 async function main() {
-  await lifetimes();
+  lifetimes();
   wiring();
   await asyncProviders();
   await scopes();

@@ -1,12 +1,14 @@
 {
   "name": "terrain-di",
-  "version": "1.0.0",
-  "description": "A pragmatic DSL-based TypeScript Dependency Injection framework. No decorators, no reflection, no framework dependency",
+  "version": "1.1.0",
+  "description": "A pragmatic TypeScript dependency injection framework. No decorators, no reflection, no runtime dependencies",
   "keywords": [
     "container",
     "dependency-injection",
     "di",
     "ioc",
+    "modules",
+    "scopes",
     "typescript"
   ],
   "homepage": "https://github.com/reactivesilicon/terrain#readme",

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createModule, createAsyncToken, createSyncToken } from "../../src";
 import {
   DefinitionInUseError,
   DisposedContainerError,
@@ -10,6 +9,7 @@ import {
   ModuleOwnershipError,
 } from "../../src";
 import { delay, ignore } from "../helpers";
+import { Container, createModule, createAsyncToken, createSyncToken } from "../internal-api";
 
 describe("lifecycle: load", () => {
   it("duplicate definition is rejected without override", async () => {

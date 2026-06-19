@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createAsyncToken, createModule, createSyncToken } from "../../src";
 import { DisposedContainerError, type SingletonDefinitionOptions } from "../../src";
 import { delay } from "../helpers";
+import { Container, createAsyncToken, createModule, createSyncToken } from "../internal-api";
 
 describe("eager start", () => {
   it("start() constructs eager singletons before any resolution", async () => {

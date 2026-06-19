@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createModule, createAsyncToken } from "../../src";
-import { AsyncProviderError, type Token } from "../../src";
 import { delay } from "../helpers";
+import { Container, createModule, createAsyncToken } from "../internal-api";
+import { AsyncProviderError, type Token } from "../internal-api";
 
 describe("async", () => {
   it("async singleton resolves once under concurrency", async () => {

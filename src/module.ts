@@ -1,19 +1,14 @@
-import { DuplicateDefinitionError } from "./errors";
+import { DuplicateDefinitionError, InvalidDefinitionError } from "./errors";
 import type { AnyToken, AsyncToken, Token } from "./token";
 import {
-  type AsyncDefinition,
   type AsyncProvider,
   type Definition,
   type DefinitionOptions,
   type SingletonDefinitionOptions,
-  type Lifetime,
   Lifetimes,
-  type SyncDefinition,
   type SyncProvider,
 } from "./types";
 import { tokenName } from "./utils";
-
-type NonSingletonLifetime = Exclude<Lifetime, typeof Lifetimes.Singleton>;
 
 declare const MODULE_BRAND: unique symbol;
 
@@ -35,9 +30,7 @@ class BuiltModule implements Module {
   readonly #definitions: ReadonlyMap<AnyToken<any>, Definition<any>>;
 
   constructor(definitions: ReadonlyMap<AnyToken<any>, Definition<any>>) {
-    this.#definitions = new Map(
-      [...definitions].map(([token, definition]) => [token, Object.freeze({ ...definition })]),
-    );
+    this.#definitions = new Map([...definitions].map(([token, definition]) => [token, Object.freeze(definition)]));
   }
 
   entries(): IterableIterator<[AnyToken<any>, Definition<any>]> {
@@ -52,96 +45,76 @@ class BuiltModule implements Module {
 export class ModuleBuilder {
   private readonly definitions = new Map<AnyToken<any>, Definition<any>>();
 
-  private assertNewToken(token: AnyToken<any>): void {
-    if (this.definitions.has(token)) {
-      throw new DuplicateDefinitionError(tokenName(token));
+  define<T>(definition: Definition<T>): void {
+    if (definition.eager && definition.lifetime !== Lifetimes.Singleton) {
+      throw new InvalidDefinitionError(JSON.stringify(definition));
     }
-  }
-
-  // Singleton registration is the only path that reads `eager`; the
-  // addNonSingleton path cannot carry it even if a caller smuggles the option
-  // past the (literal-only) excess-property check.
-  private addSingleton<T>(token: Token<T>, provider: SyncProvider<T>, options?: SingletonDefinitionOptions<T>): void {
-    this.assertNewToken(token);
-    const definition: SyncDefinition<T> = {
-      token: token,
-      lifetime: Lifetimes.Singleton,
-      provider: provider,
-      async: false,
-      ...(options?.dispose ? { dispose: options.dispose } : {}),
-      ...(options?.eager ? { eager: true } : {}),
-    };
-    this.definitions.set(token, definition);
-  }
-
-  private addSingletonAsync<T>(
-    token: AsyncToken<T>,
-    provider: AsyncProvider<T>,
-    options?: SingletonDefinitionOptions<T>,
-  ): void {
-    this.assertNewToken(token);
-    const definition: AsyncDefinition<T> = {
-      token: token,
-      lifetime: Lifetimes.Singleton,
-      provider: provider,
-      async: true,
-      ...(options?.dispose ? { dispose: options.dispose } : {}),
-      ...(options?.eager ? { eager: true } : {}),
-    };
-    this.definitions.set(token, definition);
-  }
-
-  private addNonSingleton<T>(
-    token: Token<T>,
-    lifetime: NonSingletonLifetime,
-    provider: SyncProvider<T>,
-    options?: DefinitionOptions<T>,
-  ): void {
-    this.assertNewToken(token);
-    const definition: SyncDefinition<T> = {
-      token: token,
-      lifetime: lifetime,
-      provider: provider,
-      async: false,
-      ...(options?.dispose ? { dispose: options.dispose } : {}),
-    };
-    this.definitions.set(token, definition);
-  }
-
-  private addNonSingletonAsync<T>(
-    token: AsyncToken<T>,
-    lifetime: NonSingletonLifetime,
-    provider: AsyncProvider<T>,
-    options?: DefinitionOptions<T>,
-  ): void {
-    this.assertNewToken(token);
-    const definition: AsyncDefinition<T> = {
-      token: token,
-      lifetime: lifetime,
-      provider: provider,
-      async: true,
-      ...(options?.dispose ? { dispose: options.dispose } : {}),
-    };
-    this.definitions.set(token, definition);
+    if (this.definitions.has(definition.token)) {
+      throw new DuplicateDefinitionError(tokenName(definition.token));
+    }
+    this.definitions.set(definition.token, definition);
   }
 
   single<T>(token: Token<T>, provider: SyncProvider<T>, options?: SingletonDefinitionOptions<T>): void {
-    this.addSingleton(token, provider, options);
+    this.define({
+      token: token,
+      lifetime: Lifetimes.Singleton,
+      async: false,
+      provider: provider,
+      ...(options?.dispose ? { dispose: options.dispose } : {}),
+      ...(options?.eager ? { eager: true } : {}),
+    });
   }
+
   singleAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>, options?: SingletonDefinitionOptions<T>): void {
-    this.addSingletonAsync(token, provider, options);
+    this.define({
+      token: token,
+      lifetime: Lifetimes.Singleton,
+      async: true,
+      provider: provider,
+      ...(options?.dispose ? { dispose: options.dispose } : {}),
+      ...(options?.eager ? { eager: true } : {}),
+    });
   }
+
   factory<T>(token: Token<T>, provider: SyncProvider<T>, options?: DefinitionOptions<T>): void {
-    this.addNonSingleton(token, Lifetimes.Factory, provider, options);
+    this.define({
+      token: token,
+      lifetime: Lifetimes.Factory,
+      async: false,
+      provider: provider,
+      ...(options?.dispose ? { dispose: options.dispose } : {}),
+    });
   }
+
   factoryAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>, options?: DefinitionOptions<T>): void {
-    this.addNonSingletonAsync(token, Lifetimes.Factory, provider, options);
+    this.define({
+      token: token,
+      lifetime: Lifetimes.Factory,
+      async: true,
+      provider: provider,
+      ...(options?.dispose ? { dispose: options.dispose } : {}),
+    });
   }
+
   scoped<T>(token: Token<T>, provider: SyncProvider<T>, options?: DefinitionOptions<T>): void {
-    this.addNonSingleton(token, Lifetimes.Scoped, provider, options);
+    this.define({
+      token: token,
+      lifetime: Lifetimes.Scoped,
+      async: false,
+      provider: provider,
+      ...(options?.dispose ? { dispose: options.dispose } : {}),
+    });
   }
+
   scopedAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>, options?: DefinitionOptions<T>): void {
-    this.addNonSingletonAsync(token, Lifetimes.Scoped, provider, options);
+    this.define({
+      token: token,
+      lifetime: Lifetimes.Scoped,
+      async: true,
+      provider: provider,
+      ...(options?.dispose ? { dispose: options.dispose } : {}),
+    });
   }
 
   build(): Module {

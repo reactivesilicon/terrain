@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createAsyncToken, createModule, createSyncToken } from "../../src";
-import { DependentInstanceError, MissingDependencyError, type SyncResolver } from "../../src";
 import { delay, ignore } from "../helpers";
+import { Container, createAsyncToken, createModule, createSyncToken } from "../internal-api";
+import { DependentInstanceError, MissingDependencyError, type SyncResolver } from "../internal-api";
 
 describe("unload safety: dependents", () => {
   it("unload is refused while a live singleton depends on the module", async () => {

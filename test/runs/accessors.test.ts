@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createAsyncToken, createAccessors, createModule, createSyncToken } from "../../src";
-import { type AsyncToken, DisposedContainerError, type Accessors, type Token } from "../../src";
 import { delay } from "../helpers";
+import { Container, createAsyncToken, createAccessors, createModule, createSyncToken } from "../internal-api";
+import { type AsyncToken, DisposedContainerError, type Accessors, type Token } from "../internal-api";
 
 describe("accessors", () => {
   it("sync accessor resolves through the container and honors singleton caching", () => {
@@ -88,6 +88,21 @@ describe("accessors", () => {
     const app = c.accessors({ answer: T });
     expect(app.answer()).toBe(41);
     expect(Object.isFrozen(app)).toBe(true);
+  });
+
+  it("accessors survive destructuring (closures capture the instance, not `this`)", () => {
+    const T = createSyncToken<number>("fDestructure");
+    const c = new Container();
+    c.load(createModule((m) => m.single(T, () => 5)));
+    const { t } = createAccessors(c, { t: T });
+    expect(t()).toBe(5);
+  });
+
+  it("repeated property access yields the same accessor closure", () => {
+    const T = createSyncToken<number>("fStable");
+    const c = new Container();
+    const app = createAccessors(c, { t: T });
+    expect(app.t).toBe(app.t);
   });
 
   it("accessors types map sync/async members correctly at compile time", () => {

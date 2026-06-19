@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { Container, createModule, createAsyncToken, createSyncToken } from "../../src";
 import { DisposedContainerError } from "../../src";
 import { delay, ignore, random } from "../helpers";
+import { Container, createModule, createAsyncToken, createSyncToken } from "../internal-api";
 
 describe("concurrency", () => {
   it("in-flight async singleton rejects and is disposed after dispose()", async () => {
