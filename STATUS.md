@@ -51,9 +51,9 @@ await app.scope(async (req) => ...);   // auto-disposed request scope
 - **Views are closed (decided 2026-06-13)**: no `container` escape hatch — tokens and the engine are internal currency, never on the public surface. Engine capabilities reach users only as typed view features; v1 and composed modules cannot share one container.
 - **Internals are unreachable (2026-06-13)**: module/override internals live in module-scoped `WeakMap` registries, not on the objects — public objects are frozen `{ name, override }` / `{ name }`, so no JS caller can reach tokens, the engine module, or wiring state. `ForeignModuleError` is identity-based (presence in the registry), not shape-based — structural look-alikes are rejected.
 - **Dual-mode `scope()`** on both views (callback form auto-disposes via engine `withScope`; scopes nest).
-- **Perf**: namespaces are per-module prototypes with lazy-getter accessors (the shared `accessors.ts` machinery; cached closures, destructuring-safe) — `scope()` ≈ 571ns at 200 entries; factory resolution ≈ 310ns. Type-cost measured: ~300ms marginal tsc for a pathological 200-entry module (`bench/module-composition-type-bench.mjs`).
+- **Perf**: namespaces are per-module prototypes with lazy-getter accessors (the shared `accessors.ts` machinery; cached closures, destructuring-safe) — `scope()` ≈ 571ns at 200 entries; factory resolution ≈ 310ns. Type-cost measured: ~300ms marginal tsc for a pathological 200-entry module.
 - All guards are `DIError` subclasses: `InvalidModuleNameError`, `InvalidEntryNameError`, `DuplicateEntryNameError`, `InvalidModuleUseError`, `ForeignModuleError`, `DuplicateModuleNameError`.
-- Playground: `examples/module-composition.ts` (3-layer real-world shape). v1 playground: `examples/usage.ts`.
+- Playground: `examples/module-composition.ts` (3-layer real-world shape). v1 playground: `examples/public-api-usage.ts`.
 
 ### Module-composition caveats (documented in composition.ts header)
 
@@ -105,7 +105,6 @@ Where functionality belongs — consult this before adding anything:
 - **Tests**: vitest (migrated from custom harness, then from bun-test-incompatible assertions — `bun test` also passes but is NOT the configured runner; `bun run test` is). 171 tests across 16 files. Auto-discovery (`test/runs/*.test.ts`).
 - **Coverage gates in `quality`**: statements 99 / branches 97 / functions 99 / **lines 100**. Deliberately-unreachable defensive code is marked `/* v8 ignore ... */` **with a reason** — each marker is an auditable exception (`grep -rn "v8 ignore" src/`).
 - **Fuzzers** (both seeded via `TEST_SEED`, printed every run, replayable): `stress.test.ts` (engine: random load/unload/get/scope/dispose/start sequences) and `stress-module-composition.test.ts` (module-composition layer: random module graphs + ops incl. scope views interleaved with disposal). Four invariants: no use-after-dispose, no double-dispose, exactly-once teardown of cached instances, framework-errors-only. Fired-and-forgotten resolutions use a teardown-epoch to avoid a legitimate false positive (caller-side observation lag).
-- **Benchmarks**: `bench/module-composition-type-bench.mjs` (tsc time vs module size).
 - **Gate**: `bun run quality` = oxlint + oxfmt + tsc (src) + tsc (tests — note: this was once silently broken by an inherited `exclude`; fixed) + vitest with coverage. CI mirrors it exactly.
 
 ## Conventions to uphold (see `.agents/skills/code-clarity/SKILL.md`)
@@ -120,8 +119,7 @@ Where functionality belongs — consult this before adding anything:
 
 ```sh
 bun run quality          # full gate (lint, format, both typechecks, coverage-gated tests)
-bun examples/usage.ts    # v1 playground
+bun examples/public-api-usage.ts    # v1 playground
 bun examples/module-composition.ts    # module-composition playground
-node bench/module-composition-type-bench.mjs
 TEST_SEED=<n> bun run test   # replay a fuzzer run
 ```
