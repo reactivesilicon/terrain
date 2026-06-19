@@ -31,7 +31,7 @@ type AsyncEntryNamesOf<ModuleEntries extends ModuleEntryMap> = {
   [K in keyof ModuleEntries]: ModuleEntries[K] extends ModuleEntry<unknown, typeof TokenModes.Async> ? K : never;
 }[keyof ModuleEntries];
 
-type EntryValueOf<ModuleEntries extends ModuleEntryMap, EntryName extends keyof ModuleEntries> =
+export type EntryValueOf<ModuleEntries extends ModuleEntryMap, EntryName extends keyof ModuleEntries> =
   ModuleEntries[EntryName] extends ModuleEntry<infer T, TokenMode> ? T : never;
 
 export type UsedModules = readonly ComposedModule<ComposedModuleName, ModuleEntryMap>[];
@@ -84,13 +84,13 @@ type AsyncImportNamespaces<Uses extends UsedModules> = Uses extends readonly []
 // The resolver is namespaces all the way down: imported modules under their
 // names, and the module's own earlier entries under ITS name — one uniform
 // call shape, identical to the container view.
-type SyncProviderResolver<
+export type SyncProviderResolver<
   ModuleName extends ComposedModuleName,
   Uses extends UsedModules,
   ModuleEntries extends ModuleEntryMap,
 > = SyncImportNamespaces<Uses> & { readonly [K in ModuleName]: SyncModuleAccessorsOf<ModuleEntries> };
 
-type AsyncProviderResolver<
+export type AsyncProviderResolver<
   ModuleName extends ComposedModuleName,
   Uses extends UsedModules,
   ModuleEntries extends ModuleEntryMap,

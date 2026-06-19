@@ -48,17 +48,21 @@ export * from "./types";
 export type { ComposedModule } from "./composed-module";
 export type { ModuleOverride } from "./module-override/module-override";
 
-function makeBuilder(
+function makeBuilder<ModuleName extends ComposedModuleName, ModuleEntries extends ModuleEntryMap>(
   moduleEntryDefinitions: ModuleEntryDefinitions,
-): ComposedModuleBuilder<string, UsedModules, ModuleEntryMap> {
+): ComposedModuleBuilder<string, UsedModules, ModuleEntries> {
   const addSync =
     (lifetime: Lifetime) =>
-    (entryName: ModuleEntryName, provider: SyncModuleEntryProvider, options?: SingletonDefinitionOptions<unknown>) => {
+    (
+      entryName: ModuleEntryName,
+      provider: SyncModuleEntryProvider<ModuleName, ModuleEntries, typeof entryName>,
+      options?: SingletonDefinitionOptions<unknown>,
+    ) => {
       moduleEntryDefinitions.register({
         entryName: entryName,
         lifetime: lifetime,
         mode: TokenModes.Sync,
-        provider: provider,
+        provider: provider as any,
         options: options,
       });
       return builder;
@@ -66,17 +70,22 @@ function makeBuilder(
 
   const addAsync =
     (lifetime: Lifetime) =>
-    (entryName: ModuleEntryName, provider: AsyncModuleEntryProvider, options?: SingletonDefinitionOptions<unknown>) => {
+    (
+      entryName: ModuleEntryName,
+      provider: AsyncModuleEntryProvider<ModuleName, ModuleEntries, typeof entryName>,
+      options?: SingletonDefinitionOptions<unknown>,
+    ) => {
       moduleEntryDefinitions.register({
         entryName: entryName,
         lifetime: lifetime,
         mode: TokenModes.Async,
-        provider: provider,
+        provider: provider as any,
         options: options,
       });
       return builder;
     };
 
+  // TODO: better typing
   const builder = {
     single: addSync(Lifetimes.Singleton),
     singleAsync: addAsync(Lifetimes.Singleton),
@@ -84,7 +93,7 @@ function makeBuilder(
     factoryAsync: addAsync(Lifetimes.Factory),
     scoped: addSync(Lifetimes.Scoped),
     scopedAsync: addAsync(Lifetimes.Scoped),
-  } as unknown as ComposedModuleBuilder<string, UsedModules, ModuleEntryMap>;
+  } as unknown as ComposedModuleBuilder<string, UsedModules, ModuleEntries>;
   return builder;
 }
 
@@ -123,7 +132,8 @@ export function createModule(
   assertNoNamespaceCollisions(moduleName, usedModuleInternals);
 
   const moduleEntryDefinitions = new ModuleEntryDefinitions(moduleName);
-  setup(makeBuilder(moduleEntryDefinitions));
+  const composedModuleBuilder = makeBuilder<typeof moduleName, ModuleEntryMap>(moduleEntryDefinitions);
+  setup(composedModuleBuilder);
 
   const entryDefinitions = Array.from(moduleEntryDefinitions.registeredDefinitions());
   const entryDefinitionsWithTokens = entryDefinitions.map(bundleModuleEntryDefinitionWithToken.bind(null, moduleName));

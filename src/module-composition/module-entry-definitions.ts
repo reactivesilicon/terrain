@@ -3,12 +3,36 @@ import type { Simplify } from "../kernel/types";
 import { type AsyncToken, createAsyncToken, createSyncToken, type Token, TokenModes } from "../token";
 import type { Lifetime, SingletonDefinitionOptions } from "../types";
 import { isIdentifierName } from "../validations/name-validations";
+import type {
+  AsyncProviderResolver,
+  ComposedModuleName,
+  EntryValueOf,
+  ModuleEntryMap,
+  SyncProviderResolver,
+} from "./types";
 
 export type ModuleEntryName = string;
 
-export type SyncModuleEntryProvider = (resolverNamespaces: object) => unknown;
-export type AsyncModuleEntryProvider = (resolverNamespaces: object) => Promise<unknown>;
-export type ModuleEntryProvider = SyncModuleEntryProvider | AsyncModuleEntryProvider;
+type ResolverNamespacesValue = Record<ComposedModuleName, unknown>;
+
+export type SyncModuleEntryProvider<
+  ModuleName extends ComposedModuleName,
+  ModuleEntries extends ModuleEntryMap,
+  EntryName extends ModuleEntryName,
+> = (
+  resolver: SyncProviderResolver<ModuleName, readonly [], Omit<ModuleEntries, EntryName>>,
+) => EntryValueOf<ModuleEntries, EntryName>;
+
+export type AsyncModuleEntryProvider<
+  ModuleName extends ComposedModuleName,
+  ModuleEntries extends ModuleEntryMap,
+  EntryName extends ModuleEntryName,
+> = (
+  resolver: AsyncProviderResolver<ModuleName, readonly [], Omit<ModuleEntries, EntryName>>,
+) => Promise<EntryValueOf<ModuleEntries, EntryName>>;
+// export type SyncModuleEntryProvider = (resolverNamespaces: ResolverNamespacesValue) => unknown;
+// export type AsyncModuleEntryProvider = (resolverNamespaces: ResolverNamespacesValue) => Promise<unknown>;
+// export type ModuleEntryProvider = SyncModuleEntryProvider | AsyncModuleEntryProvider;
 
 type BaseModuleEntryDefinition = {
   entryName: ModuleEntryName;
@@ -17,8 +41,14 @@ type BaseModuleEntryDefinition = {
 };
 
 // TODO: find better name
-type SyncProvision = { mode: typeof TokenModes.Sync; provider: SyncModuleEntryProvider };
-type AsyncProvision = { mode: typeof TokenModes.Async; provider: AsyncModuleEntryProvider };
+type SyncProvision = {
+  mode: typeof TokenModes.Sync;
+  provider: (resolverNamespaces: ResolverNamespacesValue) => unknown;
+};
+type AsyncProvision = {
+  mode: typeof TokenModes.Async;
+  provider: (resolverNamespaces: ResolverNamespacesValue) => Promise<unknown>;
+};
 
 export type ModuleEntryDefinition =
   | Simplify<BaseModuleEntryDefinition & SyncProvision>

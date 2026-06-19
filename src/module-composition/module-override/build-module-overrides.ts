@@ -61,36 +61,36 @@ export function buildModuleOverride<ModuleName extends ComposedModuleName, Modul
     return original;
   }
 
-  const collectSyncReplacement = (
-    entryName: ModuleEntryName,
-    provider: SyncModuleEntryProvider,
+  const collectSyncReplacement = <EntryName extends ModuleEntryName>(
+    entryName: EntryName,
+    provider: SyncModuleEntryProvider<ModuleName, ModuleEntries, EntryName>,
     options?: SingletonDefinitionOptions<unknown>,
-  ) => {
+  ): OverrideBuilder<ModuleName, ModuleEntries> => {
     const original = assertEntryCanBeReplaced(entryName, TokenModes.Sync, options);
-    replacementsByEntryName.set(entryName, { ...original, provider, options });
+    replacementsByEntryName.set(entryName, { ...original, provider: provider as any, options });
     return overrideBuilder;
   };
 
-  const collectAsyncReplacement = (
-    entryName: ModuleEntryName,
-    provider: AsyncModuleEntryProvider,
+  const collectAsyncReplacement = <EntryName extends ModuleEntryName>(
+    entryName: EntryName,
+    provider: AsyncModuleEntryProvider<ModuleName, ModuleEntries, EntryName>,
     options?: SingletonDefinitionOptions<unknown>,
-  ) => {
+  ): OverrideBuilder<ModuleName, ModuleEntries> => {
     const original = assertEntryCanBeReplaced(entryName, TokenModes.Async, options);
-    replacementsByEntryName.set(entryName, { ...original, provider, options });
+    replacementsByEntryName.set(entryName, { ...original, provider: provider as any, options });
     return overrideBuilder;
   };
 
-  const overrideBuilder = {
-    with: (
-      entryName: ModuleEntryName,
-      provider: SyncModuleEntryProvider,
+  const overrideBuilder: OverrideBuilder<ModuleName, ModuleEntries> = {
+    with: <EntryName extends ModuleEntryName>(
+      entryName: EntryName,
+      provider: SyncModuleEntryProvider<ModuleName, ModuleEntries, EntryName>,
       options?: SingletonDefinitionOptions<unknown>,
     ) => collectSyncReplacement(entryName, provider, options),
 
-    withAsync: (
-      entryName: ModuleEntryName,
-      provider: AsyncModuleEntryProvider,
+    withAsync: <EntryName extends ModuleEntryName>(
+      entryName: EntryName,
+      provider: AsyncModuleEntryProvider<ModuleName, ModuleEntries, EntryName>,
       options?: SingletonDefinitionOptions<unknown>,
     ) => collectAsyncReplacement(entryName, provider, options),
   };
