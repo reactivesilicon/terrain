@@ -3,7 +3,9 @@ import { type AnyToken, type AsyncToken, isAsyncToken, type Token } from "./toke
 import type { AsyncResolver, SyncResolver } from "./types";
 
 /** Name → token mapping accessors are built from. */
-export type AccessorSpec = Record<string, AnyToken<any>>;
+export type AccessorSpec = Record<string, AnyToken<unknown>>;
+/** A sync-only spec: every token resolves through a plain SyncResolver. */
+export type SyncAccessorSpec = Record<string, Token<unknown>>;
 
 /** Typed accessors derived from a spec: sync tokens become () => T,
  *  async tokens become () => Promise<T>. */
@@ -15,47 +17,63 @@ export type Accessors<S extends AccessorSpec> = {
       : never;
 };
 
-interface AccessorInstance {
-  readonly source: SyncResolver;
+declare const REQUIRED_SOURCE: unique symbol;
+
+interface AccessorInstance<Source extends SyncResolver> {
+  readonly source: Source;
   readonly accessorCache: Record<string, (() => unknown) | undefined>;
 }
 
-/** One prototype per spec, instantiated once per source. Entries are lazy
- *  getters: the first access creates and caches a closure bound to the
- *  instance's source, so instances are O(1) to create, only accessors actually
- *  used are allocated, and destructured accessors keep working (the closure
- *  captures the instance, not `this`). */
-export function buildAccessorPrototype(spec: AccessorSpec): object {
-  const prototype = {};
-  for (const [name, token] of Object.entries(spec)) {
-    // A prototype must only be instantiated over a source that can resolve
-    // every token in its spec: a spec with async tokens needs an AsyncResolver
-    // (or Container); a sync-only spec works over a plain SyncResolver.
-    const resolve = isAsyncToken(token)
-      ? (source: SyncResolver) => (source as AsyncResolver).getAsync(token)
-      : (source: SyncResolver) => source.get(token);
-    Object.defineProperty(prototype, name, {
-      enumerable: true,
-      get(this: AccessorInstance) {
-        const cached = this.accessorCache[name];
-        if (cached) return cached;
-        const source = this.source;
-        const accessor = () => resolve(source);
-        this.accessorCache[name] = accessor;
-        return accessor;
-      },
-    });
+/** Built once per spec: the lazy getters live here, frozen. The Source type
+ *  param is the weakest resolver it can be instantiated over — a sync-only
+ *  prototype works over any resolver; a full one requires getAsync. */
+export class AccessorPrototype<Source extends SyncResolver> {
+  // Source must be branded by a function-typed PROPERTY, not the instantiate()
+  // method param: method params are checked bivariantly, so the param alone
+  // would let a getAsync-needing prototype be instantiated over a plain
+  // SyncResolver. This contravariant property is what actually rejects that.
+  declare readonly [REQUIRED_SOURCE]?: (source: Source) => void;
+
+  constructor(resolversByName: Record<string, (source: Source) => unknown>) {
+    for (const [name, resolve] of Object.entries(resolversByName)) {
+      Object.defineProperty(this, name, {
+        enumerable: true,
+        get(this: AccessorInstance<Source>) {
+          const cached = this.accessorCache[name];
+          if (cached) return cached;
+          const source = this.source;
+          const accessor = () => resolve(source);
+          this.accessorCache[name] = accessor;
+          return accessor;
+        },
+      });
+    }
+    Object.freeze(this);
   }
-  return Object.freeze(prototype);
+
+  /** O(1): a lightweight per-source instance inheriting these getters. */
+  instantiate(source: Source): object {
+    const instance = Object.create(this) as AccessorInstance<Source>;
+    Object.defineProperties(instance, {
+      source: { value: source },
+      accessorCache: { value: {} },
+    });
+    return Object.freeze(instance);
+  }
 }
 
-export function instantiateAccessors(prototype: object, source: SyncResolver): object {
-  const accessors = Object.create(prototype) as AccessorInstance;
-  Object.defineProperties(accessors, {
-    source: { value: source },
-    accessorCache: { value: {} },
-  });
-  return Object.freeze(accessors);
+export function buildSyncAccessorPrototype(spec: SyncAccessorSpec): AccessorPrototype<SyncResolver> {
+  const resolversByName: Record<string, (source: SyncResolver) => unknown> = {};
+  for (const [name, token] of Object.entries(spec)) resolversByName[name] = (source) => source.get(token);
+  return new AccessorPrototype(resolversByName);
+}
+
+export function buildAccessorPrototype(spec: AccessorSpec): AccessorPrototype<AsyncResolver> {
+  const resolversByName: Record<string, (source: AsyncResolver) => unknown> = {};
+  for (const [name, token] of Object.entries(spec)) {
+    resolversByName[name] = isAsyncToken(token) ? (source) => source.getAsync(token) : (source) => source.get(token);
+  }
+  return new AccessorPrototype(resolversByName);
 }
 
 /**
@@ -68,5 +86,5 @@ export function instantiateAccessors(prototype: object, source: SyncResolver): o
  * call, and a disposed container makes every accessor throw.
  */
 export function createAccessors<S extends AccessorSpec>(container: Container, spec: S): Accessors<S> {
-  return instantiateAccessors(buildAccessorPrototype(spec), container) as Accessors<S>;
+  return buildAccessorPrototype(spec).instantiate(container) as Accessors<S>;
 }
