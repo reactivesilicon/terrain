@@ -128,7 +128,6 @@ These are not current release blockers unless the maintainer decides otherwise:
 - Fuzzers print `TEST_SEED` for replay:
   - `test/runs/stress.test.ts`
   - `test/runs/stress-module-composition.test.ts`
-- Benchmark: `bench/module-composition-type-bench.mjs`.
 - Coverage gates in `quality`: statements 99, branches 97, functions 99, lines 100.
 
 ## Conventions to uphold
@@ -149,5 +148,4 @@ bun run quality
 bun run build
 bun examples/public-api-usage.ts
 TEST_SEED=<n> bun run test
-node bench/module-composition-type-bench.mjs
 ```
