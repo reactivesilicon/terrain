@@ -18,6 +18,8 @@ import { toKernelDefinition } from "./kernel-definition-transformer";
 import {
   type AsyncModuleEntryProvider,
   bundleModuleEntryDefinitionWithToken,
+  eraseAsyncEntryProvider,
+  eraseSyncEntryProvider,
   ModuleEntryDefinitions,
   type ModuleEntryDefinitionWithToken,
   type ModuleEntryName,
@@ -62,7 +64,7 @@ function makeBuilder<ModuleName extends ComposedModuleName, ModuleEntries extend
         entryName: entryName,
         lifetime: lifetime,
         mode: TokenModes.Sync,
-        provider: provider as any,
+        provider: eraseSyncEntryProvider(provider),
         options: options,
       });
       return builder;
@@ -79,13 +81,16 @@ function makeBuilder<ModuleName extends ComposedModuleName, ModuleEntries extend
         entryName: entryName,
         lifetime: lifetime,
         mode: TokenModes.Async,
-        provider: provider as any,
+        provider: eraseAsyncEntryProvider(provider),
         options: options,
       });
       return builder;
     };
 
-  // TODO: better typing
+  // Phantom-builder seam: a single runtime object cannot carry the type of a
+  // fluent interface whose every method returns a type with one more entry
+  // accumulated. This assertion is irreducible; the resulting public types are
+  // pinned by test/runs/types.test.ts.
   const builder = {
     single: addSync(Lifetimes.Singleton),
     singleAsync: addAsync(Lifetimes.Singleton),

@@ -50,6 +50,36 @@ type AsyncProvision = {
   provider: (resolverNamespaces: ResolverNamespacesValue) => Promise<unknown>;
 };
 
+/** The composed-module builder's one intentional type-erasure seam. Entry and
+ *  override providers are authored against rich namespace-resolver types
+ *  (SyncProviderResolver / AsyncProviderResolver) but are stored and invoked
+ *  type-erased: the engine calls them with the runtime namespaces object. The
+ *  rich public surface they erase from is pinned by the positive expectTypeOf
+ *  assertions in test/runs/types.test.ts — those tests, not the compiler, are
+ *  what catch a regression at this boundary. Each helper's generic parameter
+ *  accepts only a real provider — keeping call sites cast-free and the signature
+ *  self-documenting — but the single `as` in the body is the actual erasure;
+ *  the generics decorate the input, they do not make the cast checked. */
+export function eraseSyncEntryProvider<
+  ModuleName extends ComposedModuleName,
+  ModuleEntries extends ModuleEntryMap,
+  EntryName extends ModuleEntryName,
+>(
+  syncModuleEntryProvider: SyncModuleEntryProvider<ModuleName, ModuleEntries, EntryName>,
+): (resolverNamespaces: ResolverNamespacesValue) => unknown {
+  return syncModuleEntryProvider as (resolverNamespaces: ResolverNamespacesValue) => unknown;
+}
+
+export function eraseAsyncEntryProvider<
+  ModuleName extends ComposedModuleName,
+  ModuleEntries extends ModuleEntryMap,
+  EntryName extends ModuleEntryName,
+>(
+  asyncModuleEntryProvider: AsyncModuleEntryProvider<ModuleName, ModuleEntries, EntryName>,
+): (resolverNamespaces: ResolverNamespacesValue) => Promise<unknown> {
+  return asyncModuleEntryProvider as (resolverNamespaces: ResolverNamespacesValue) => Promise<unknown>;
+}
+
 export type ModuleEntryDefinition =
   | Simplify<BaseModuleEntryDefinition & SyncProvision>
   | Simplify<BaseModuleEntryDefinition & AsyncProvision>;
