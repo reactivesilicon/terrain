@@ -1,0 +1,73 @@
+import { describe, expectTypeOf, it } from "vitest";
+
+import { createContainer, createModule } from "../../src";
+
+// Positive type-contract assertions. These are no-ops at runtime; their
+// enforcement path is `bun run typecheck:test` (tsc -p tsconfig.test.json),
+// NOT `vitest run`. A wrong assertion surfaces only as a tsc error. Every
+// accessor-return assertion is paired with `.not.toBeAny()` because the whole
+// point is to catch an `any`-leak through the composition builder's casts —
+// an `any` silently satisfies every existing `@ts-expect-error` test.
+
+interface Logger {
+  info(message: string): void;
+}
+interface UserRepo {
+  find(id: string): string | null;
+}
+
+describe("public type contract (positive assertions)", () => {
+  it("container accessors have exact sync/async return types — no any-leak", () => {
+    const Infra = createModule("Infra", (m) =>
+      m.single("logger", (): Logger => ({ info() {} })).singleAsync("config", async () => ({ env: "prod" as const })),
+    );
+    const app = createContainer(Infra);
+
+    expectTypeOf(app.Infra.logger).toEqualTypeOf<() => Logger>();
+    expectTypeOf(app.Infra.logger()).toEqualTypeOf<Logger>();
+    expectTypeOf(app.Infra.logger()).not.toBeAny();
+
+    expectTypeOf(app.Infra.config).toEqualTypeOf<() => Promise<{ env: "prod" }>>();
+    expectTypeOf(app.Infra.config()).resolves.toEqualTypeOf<{ env: "prod" }>();
+    expectTypeOf(app.Infra.config()).not.toBeAny();
+  });
+
+  it("provider resolver namespaces carry imported + own-earlier entry types", () => {
+    const Infra = createModule("Infra", (m) => m.single("logger", (): Logger => ({ info() {} })));
+    createModule("Data", { uses: [Infra] }, (m) =>
+      m
+        .single("rows", () => new Map<string, string>([["1", "Ada"]]))
+        .single("userRepo", (r): UserRepo => {
+          // imported module entry, exact type
+          expectTypeOf(r.Infra.logger()).toEqualTypeOf<Logger>();
+          expectTypeOf(r.Infra.logger()).not.toBeAny();
+          // own earlier entry, exact type
+          expectTypeOf(r.Data.rows()).toEqualTypeOf<Map<string, string>>();
+          expectTypeOf(r.Data.rows()).not.toBeAny();
+          return { find: (id) => r.Data.rows().get(id) ?? null };
+        }),
+    );
+  });
+
+  it("the container view exposes namespaces plus lifecycle methods", () => {
+    const Infra = createModule("Infra", (m) => m.single("logger", (): Logger => ({ info() {} })));
+    const app = createContainer(Infra);
+
+    expectTypeOf(app.Infra).toEqualTypeOf<{ readonly logger: () => Logger }>();
+    expectTypeOf(app.start).toEqualTypeOf<() => Promise<void>>();
+    expectTypeOf(app.dispose).toEqualTypeOf<() => Promise<void>>();
+    expectTypeOf(app.scope).toBeFunction();
+  });
+
+  it("override .with/.withAsync infer the original entry's value type", () => {
+    const Infra = createModule("Infra", (m) =>
+      m.single("logger", (): Logger => ({ info() {} })).singleAsync("config", async () => ({ env: "prod" as const })),
+    );
+    Infra.override((o) =>
+      o.with("logger", (): Logger => ({ info() {} })).withAsync("config", async () => ({ env: "prod" as const })),
+    );
+    // The provider return types above must satisfy the original entry types;
+    // a wrong return type here would be a tsc error caught by typecheck:test.
+    expectTypeOf(Infra.override).toBeFunction();
+  });
+});
