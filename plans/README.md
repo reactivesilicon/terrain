@@ -17,7 +17,7 @@ selected work is DX hardening, documentation accuracy, and one design spike.
 | 002  | Fix STATUS.md `bench/` drift and decide `skills-lock.json` | P2       | S      | —          | DONE   |
 | 003  | Spike: `createContainer(options, ...parts)` design         | P3       | S      | —          | TODO   |
 | 004  | Pin the public type contract with positive `expectTypeOf`  | P2       | M      | —          | DONE   |
-| 005  | Contain the composition-builder casts into named seams     | P3       | M      | 004        | TODO   |
+| 005  | Contain the composition-builder casts into named seams     | P3       | M      | 004        | DONE   |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
