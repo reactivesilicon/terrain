@@ -3,6 +3,7 @@
 import type { Simplify, UnionToIntersection } from "../kernel/types";
 import { type TokenMode, TokenModes } from "../token";
 import type { ContainerOptions, DefinitionOptions, SingletonDefinitionOptions } from "../types";
+import type { ReservedModuleName } from "../validations/reserved-module-names";
 import type { ComposedModule } from "./composed-module";
 import type { ModuleEntryName } from "./module-entry-definitions";
 import type { ModuleOverride } from "./module-override/module-override";
@@ -219,7 +220,6 @@ export type ScopeView<Parts extends readonly ContainerPart[]> = Simplify<
   }
 >;
 
-/** Module names must be PascalCase. The container view's API (scope, start,
- *  dispose — and anything added later) is lowercase, so namespaces and
- *  methods can never collide, with no reserved-word list to maintain. */
-export type PascalCase<Name extends string> = Name extends Capitalize<Name> ? Name : never;
+/** A module name may be any identifier except a reserved view-method name.
+ *  Identifier-ness is enforced at runtime; the type guard covers reserved names. */
+export type PublicModuleName<Name extends string> = Name extends ReservedModuleName ? never : Name;

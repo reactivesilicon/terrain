@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { DIError, DisposedContainerError, InvalidEntryNameError } from "../../src";
-import { createContainer, createModule } from "../../src/module-composition/composition";
+import { DIError, DisposedContainerError, InvalidEntryNameError, InvalidModuleNameError } from "../../src";
+import { createContainer, createModule } from "../../src";
+import { RESERVED_MODULE_NAMES } from "../../src/validations/name-validations";
 import { delay } from "../helpers";
 
 interface Logger {
@@ -367,22 +368,34 @@ describe("named modules (spike)", () => {
     expect((app.Data as Record<string, unknown>)["logger"]).toBeUndefined();
   });
 
-  it("module names must be PascalCase so they can never shadow the view API", () => {
-    // The runtime backstop (typed callers are stopped at compile time below).
-    expect(() => createModule("scope" as never, (m) => m.single("x", () => 1))).toThrowError(/must be PascalCase/);
-    expect(() => createModule("dispose" as never, (m) => m.single("x", () => 1))).toThrowError(/must be PascalCase/);
-    expect(() => createModule("9Lives" as never, (m) => m.single("x", () => 1))).toThrowError(/must be PascalCase/);
-    expect(() => createModule("My Mod" as never, (m) => m.single("x", () => 1))).toThrowError(/must be PascalCase/);
+  it("module names may be any identifier except the reserved view-method names", () => {
+    for (const reservedModuleName of RESERVED_MODULE_NAMES) {
+      expect(() => createModule(reservedModuleName as never, (m) => m.single("x", () => 1))).toThrowError(
+        InvalidModuleNameError,
+      );
+    }
+    expect(() => createModule("9Lives" as never, (m) => m.single("x", () => 1))).toThrowError(InvalidModuleNameError);
+    expect(() => createModule("My Mod" as never, (m) => m.single("x", () => 1))).toThrowError(InvalidModuleNameError);
+    expect(() => createModule("infra", (m) => m.single("x", () => 1))).not.toThrow();
+    expect(() => createModule("userService", (m) => m.single("x", () => 1))).not.toThrow();
   });
 
-  it("compile-time: lowercase module names are rejected", () => {
+  it("compile-time: reserved view-method module names are rejected; other identifiers allowed", () => {
     void function compileOnly() {
-      // @ts-expect-error module names must be PascalCase
       createModule("infra", (m) => m.single("x", () => 1));
-      // @ts-expect-error a module literally named after a view method cannot exist
+      // @ts-expect-error 'start' is a reserved view-method name
       createModule("start", (m) => m.single("x", () => 1));
+      // @ts-expect-error 'dispose' is a reserved view-method name
+      createModule("dispose", (m) => m.single("x", () => 1));
     };
     expect(true).toBe(true);
+  });
+
+  it("the reserved module names equal the container view's own method names", () => {
+    const M = createModule("M", (m) => m.single("x", () => 1));
+    const app = createContainer({ parts: [M] });
+    const methodKeys = Object.keys(app).filter((key) => typeof (app as Record<string, unknown>)[key] === "function");
+    expect(new Set(methodKeys)).toEqual(new Set(RESERVED_MODULE_NAMES));
   });
 
   it("using a module that bears the importer's own name is rejected", () => {

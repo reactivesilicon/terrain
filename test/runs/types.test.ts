@@ -95,4 +95,17 @@ describe("public type contract (positive assertions)", () => {
     // a wrong return type here would be a tsc error caught by typecheck:test.
     expectTypeOf(Infra.override).toBeFunction();
   });
+
+  it("module names: any identifier accepted, reserved view words rejected", () => {
+    const infra = createModule("infra", (m) => m.single("logger", (): Logger => ({ info() {} })));
+    const app = createContainer({ parts: [infra] });
+
+    expectTypeOf(app.infra.logger()).toEqualTypeOf<Logger>();
+    expectTypeOf(app.infra.logger()).not.toBeAny();
+
+    void function compileOnly() {
+      // @ts-expect-error 'dispose' is a reserved view-method name
+      createModule("dispose", (m) => m.single("x", () => 1));
+    };
+  });
 });

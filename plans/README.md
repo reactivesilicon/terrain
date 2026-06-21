@@ -20,7 +20,7 @@ selected work is DX hardening, documentation accuracy, and one design spike.
 | 005  | Contain the composition-builder casts into named seams     | P3       | M      | 004        | DONE   |
 | 006  | Implement `createContainer({ options, parts })` (breaking) | P2       | M      | 003        | DONE   |
 | 007  | Harden accessors/namespaces/views to null-prototype        | P2       | M      | —          | DONE   |
-| 008  | Relax module names (any identifier minus reserved words)   | P3       | M      | 007        | TODO   |
+| 008  | Relax module names (any identifier minus reserved words)   | P3       | M      | 007        | DONE   |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 

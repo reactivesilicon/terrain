@@ -42,7 +42,7 @@ import type {
   ContainerPart,
   ContainerView,
   ModuleEntryMap,
-  PascalCase,
+  PublicModuleName,
   UsedModules,
 } from "./types";
 import { assertNoNamespaceCollisions, wiringOf } from "./wiring";
@@ -109,7 +109,7 @@ type RuntimeModuleBuilder = ComposedModuleBuilder<ComposedModuleName, UsedModule
 type RuntimeModuleSetup = (composedModuleBuilder: RuntimeModuleBuilder) => unknown;
 
 export function createModule<const ModuleName extends ComposedModuleName, ModuleEntries extends ModuleEntryMap>(
-  moduleName: PascalCase<ModuleName>,
+  moduleName: PublicModuleName<ModuleName>,
   setup: (
     composedModuleBuilder: ComposedModuleBuilder<ModuleName, readonly [], {}>,
   ) => ComposedModuleBuilder<ModuleName, readonly [], ModuleEntries>,
@@ -119,7 +119,7 @@ export function createModule<
   const Uses extends UsedModules,
   ModuleEntries extends ModuleEntryMap,
 >(
-  moduleName: PascalCase<ModuleName>,
+  moduleName: PublicModuleName<ModuleName>,
   config: { uses: Uses },
   setup: (
     composedModuleBuilder: ComposedModuleBuilder<ModuleName, Uses, {}>,

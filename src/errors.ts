@@ -1,3 +1,5 @@
+import { RESERVED_MODULE_NAMES } from "./validations/reserved-module-names";
+
 /** Base class for all framework-raised errors. */
 export class DIError extends Error {}
 
@@ -120,9 +122,10 @@ export class LifecycleOperationError extends DIError {
 
 export class InvalidModuleNameError extends DIError {
   constructor(name: string) {
+    const reservedModuleNames = RESERVED_MODULE_NAMES.join(", ");
     super(
-      `Module name '${name}' must be PascalCase (an identifier starting with an uppercase letter); ` +
-        `the container view's lowercase API can then never collide with a module namespace.`,
+      `Module name '${name}' must be a valid identifier (letters, digits, _ or $, not starting with a digit) ` +
+        `and not a reserved view-method name (${reservedModuleNames}).`,
     );
     this.name = "InvalidModuleNameError";
   }
