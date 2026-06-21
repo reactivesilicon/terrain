@@ -133,7 +133,9 @@ describe("stress: named layer random operations", () => {
       }
 
       // ── random operations against the view ──
-      const app = (createContainer as never as (...m: ComposedModule<string, never>[]) => unknown)(...builtModules) as {
+      const app = (createContainer as never as (config: { parts: ComposedModule<string, never>[] }) => unknown)({
+        parts: builtModules,
+      }) as {
         scope(): Record<string, Record<string, () => unknown>> & { dispose(): Promise<void> };
         start(): Promise<void>;
         dispose(): Promise<void>;

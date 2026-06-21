@@ -22,7 +22,7 @@ describe("named modules (spike)", () => {
         }),
     );
 
-    const app = createContainer(Core);
+    const app = createContainer({ parts: [Core] });
     const logger: Logger = app.Core.logger();
     expect(logger.log("hi")).toBe("[log] hi");
     const db: Db = await app.Core.db();
@@ -37,7 +37,7 @@ describe("named modules (spike)", () => {
         .single("derived", (r) => r.Mod.base() * 21)
         .single("summary", (r) => `${r.Mod.base()}->${r.Mod.derived()}`),
     );
-    const app = createContainer(Mod);
+    const app = createContainer({ parts: [Mod] });
     expect(app.Mod.derived()).toBe(42);
     expect(app.Mod.summary()).toBe("2->42");
   });
@@ -54,12 +54,12 @@ describe("named modules (spike)", () => {
         .singleAsync("health", async (r) => `${r.Core.logger().log("health")}/${(await r.Core.db()).ping()}`),
     );
 
-    const wiredOnly = createContainer(Data); // Core auto-loads for wiring...
+    const wiredOnly = createContainer({ parts: [Data] }); // Core auto-loads for wiring...
     expect(wiredOnly.Data.repo().describe()).toBe("core:repo");
     expect((wiredOnly as Record<string, unknown>)["Core"]).toBeUndefined(); // ...but is not exposed
     await wiredOnly.dispose();
 
-    const app = createContainer(Data, Core); // exposure is explicit
+    const app = createContainer({ parts: [Data, Core] }); // exposure is explicit
     expect(app.Data.repo().describe()).toBe("core:repo");
     expect(await app.Data.health()).toBe("core:health/pong");
     expect(app.Core.logger().log("direct")).toBe("core:direct");
@@ -72,7 +72,7 @@ describe("named modules (spike)", () => {
     const A = createModule("A", { uses: [Core] }, (m) => m.single("a", (r) => r.Core.counter()));
     const B = createModule("B", { uses: [Core] }, (m) => m.single("b", (r) => r.Core.counter()));
 
-    const app = createContainer(A, B);
+    const app = createContainer({ parts: [A, B] });
     expect(app.A.a()).toBe(1);
     expect(app.B.b()).toBe(1);
     expect(built).toBe(1);
@@ -84,7 +84,7 @@ describe("named modules (spike)", () => {
       m.factory("stamp", () => (stamps += 1)).scoped("ctx", () => ({ id: Math.floor(stamps * 1000) + stamps })),
     );
 
-    const app = createContainer(Mod);
+    const app = createContainer({ parts: [Mod] });
     expect(app.Mod.stamp()).toBe(1);
     expect(app.Mod.stamp()).toBe(2);
 
@@ -113,7 +113,7 @@ describe("named modules (spike)", () => {
         })),
     );
 
-    const app = createContainer(Mod);
+    const app = createContainer({ parts: [Mod] });
     expect(await app.Mod.mint()).toBe(1);
     expect(await app.Mod.mint()).toBe(2); // factory: fresh per call
 
@@ -135,7 +135,7 @@ describe("named modules (spike)", () => {
         },
       }),
     );
-    const app = createContainer(Mod);
+    const app = createContainer({ parts: [Mod] });
 
     const result = await app.scope(async (req) => req.Mod.ctx().id);
     expect(result).toBe(7);
@@ -158,7 +158,7 @@ describe("named modules (spike)", () => {
 
   it("scopes nest: a request scope opens transaction sub-scopes", async () => {
     const Mod = createModule("Mod", (m) => m.scoped("ctx", () => ({})));
-    const app = createContainer(Mod);
+    const app = createContainer({ parts: [Mod] });
     const request = app.scope();
     const requestCtx = request.Mod.ctx();
 
@@ -179,12 +179,12 @@ describe("named modules (spike)", () => {
 
     // Each importer's r.Core resolves against ITS OWN dependency — npm-style
     // version isolation, with both Cores loaded under distinct tokens.
-    const app = createContainer(A, B);
+    const app = createContainer({ parts: [A, B] });
     expect(app.A.seen()).toBe("v1");
     expect(app.B.seen()).toBe("v2");
 
     // Exposing both identically-named modules is the only conflict.
-    expect(() => createContainer(A, B, CoreV1, CoreV2)).toThrowError(/Duplicate module name 'Core'/);
+    expect(() => createContainer({ parts: [A, B, CoreV1, CoreV2] })).toThrowError(/Duplicate module name 'Core'/);
   });
 
   it("eager + start() constructs at boot; disposers run on dispose", async () => {
@@ -201,7 +201,7 @@ describe("named modules (spike)", () => {
       ),
     );
 
-    const app = createContainer(Mod);
+    const app = createContainer({ parts: [Mod] });
     expect(events).toEqual([]);
     await app.start();
     expect(events).toEqual(["connected"]);
@@ -209,16 +209,50 @@ describe("named modules (spike)", () => {
     expect(events).toEqual(["connected", "closed"]);
   });
 
+  it("createContainer threads onDisposeError to observe orphan disposal failures", async () => {
+    let hookError: unknown = null;
+    const Infra = createModule("Infra", (m) =>
+      m.singleAsync(
+        "resource",
+        async () => {
+          await delay(30);
+          return {
+            close: () => {
+              throw new Error("orphan-dispose");
+            },
+          };
+        },
+        { dispose: (resource) => resource.close() },
+      ),
+    );
+    const app = createContainer({
+      options: {
+        onDisposeError: (error) => {
+          hookError = error;
+        },
+      },
+      parts: [Infra],
+    });
+
+    const pendingResource = app.Infra.resource();
+    pendingResource.catch(() => {});
+    await delay(5);
+    await app.dispose();
+    await delay(10);
+
+    expect(hookError instanceof Error && hookError.message === "orphan-dispose").toBeTruthy();
+  });
+
   it("accessors of a disposed container throw", async () => {
     const Mod = createModule("Mod", (m) => m.single("x", () => 1));
-    const app = createContainer(Mod);
+    const app = createContainer({ parts: [Mod] });
     await app.dispose();
     expect(() => app.Mod.x()).toThrowError(DisposedContainerError);
   });
 
   it("views do not expose the engine container or tokens", async () => {
     const Mod = createModule("Mod", (m) => m.single("x", () => 1));
-    const app = createContainer(Mod);
+    const app = createContainer({ parts: [Mod] });
     expect((app as Record<string, unknown>)["container"], "no engine escape hatch on the app view").toBe(undefined);
     const requestScope = app.scope();
     expect((requestScope as Record<string, unknown>)["container"], "none on scope views either").toBe(undefined);
@@ -250,7 +284,7 @@ describe("named modules (spike)", () => {
   it("duplicate module names in one container are rejected", () => {
     const A1 = createModule("Same", (m) => m.single("x", () => 1));
     const A2 = createModule("Same", (m) => m.single("y", () => 2));
-    expect(() => createContainer(A1, A2)).toThrowError(/Duplicate module name 'Same'/);
+    expect(() => createContainer({ parts: [A1, A2] })).toThrowError(/Duplicate module name 'Same'/);
   });
 
   it("accessors survive destructuring, on views and inside providers", async () => {
@@ -261,7 +295,7 @@ describe("named modules (spike)", () => {
         return { tag: logger().log("repo") };
       }),
     );
-    const app = createContainer(Data, Core);
+    const app = createContainer({ parts: [Data, Core] });
     const { logger } = app.Core; // detached accessor on the view
     expect(logger().log("view")).toBe("c:view");
     expect(app.Data.repo().tag).toBe("c:repo");
@@ -272,7 +306,7 @@ describe("named modules (spike)", () => {
 
   it("a foreign object smuggled in as a module fails with a clear error", () => {
     const impostor = { name: "Fake" } as never;
-    expect(() => createContainer(impostor)).toThrowError(/not a module created by createModule/);
+    expect(() => createContainer({ parts: [impostor] })).toThrowError(/not a module created by createModule/);
     expect(() => createModule("Importer", { uses: [impostor] }, (m) => m.single("x", () => 1))).toThrowError(
       /not a module created by createModule/,
     );
@@ -285,9 +319,9 @@ describe("named modules (spike)", () => {
       uses: [],
       override: () => ({}),
     } as never;
-    expect(() => createContainer(lookAlike)).toThrowError(/not a module created by createModule/);
+    expect(() => createContainer({ parts: [lookAlike] })).toThrowError(/not a module created by createModule/);
     const overrideLookAlike = { name: "Fake", replacements: new Map() } as never;
-    expect(() => createContainer(overrideLookAlike)).toThrowError(/not a module created by createModule/);
+    expect(() => createContainer({ parts: [overrideLookAlike] })).toThrowError(/not a module created by createModule/);
   });
 
   it("modules and overrides expose nothing internal: no tokens, no engine module, no wiring", () => {
@@ -307,7 +341,7 @@ describe("named modules (spike)", () => {
 
   it("namespaced accessor objects are frozen", () => {
     const Mod = createModule("Mod", (m) => m.single("x", () => 1));
-    const app = createContainer(Mod);
+    const app = createContainer({ parts: [Mod] });
     expect(Object.isFrozen(app.Mod)).toBe(true);
     expect(Object.isFrozen(app)).toBe(true);
   });
@@ -315,7 +349,7 @@ describe("named modules (spike)", () => {
   it("a used module's entries are not re-exported by the importer", () => {
     const Core = createModule("Core", (m) => m.single("logger", (): Logger => ({ log: (s) => s })));
     const Data = createModule("Data", { uses: [Core] }, (m) => m.single("repo", () => ({})));
-    const app = createContainer(Data);
+    const app = createContainer({ parts: [Data] });
     expect((app.Data as Record<string, unknown>)["logger"]).toBeUndefined();
   });
 
@@ -366,7 +400,7 @@ describe("named modules (spike)", () => {
     const FakeInfra = Infra.override((o) => o.with("logger", (): Logger => ({ log: (msg) => `fake:${msg}` })));
 
     // Infra is not even exposed — overriding transitive wiring works.
-    const app = createContainer(Domain, FakeInfra);
+    const app = createContainer({ parts: [Domain, FakeInfra] });
     expect(app.Domain.greet().run()).toBe("fake:hi");
     expect(realRan, "the real provider must never construct").toBe(0);
     await app.dispose();
@@ -394,7 +428,7 @@ describe("named modules (spike)", () => {
         { eager: true, dispose: () => void events.push("fake-closed") },
       ),
     );
-    const app = createContainer(Infra, FakeInfra);
+    const app = createContainer({ parts: [Infra, FakeInfra] });
     await app.start();
     expect(events).toEqual(["fake-connect"]);
     expect((await app.Infra.db()).ping()).toBe("fake");
@@ -405,7 +439,7 @@ describe("named modules (spike)", () => {
   it("override keeps the original lifetime: a scoped entry stays scoped", async () => {
     const Mod = createModule("Mod", (m) => m.scoped("ctx", () => ({ kind: "real" })));
     const Fake = Mod.override((o) => o.with("ctx", () => ({ kind: "fake" })));
-    const app = createContainer(Mod, Fake);
+    const app = createContainer({ parts: [Mod, Fake] });
     const s1 = app.scope();
     const s2 = app.scope();
     expect(s1.Mod.ctx().kind).toBe("fake");
@@ -419,7 +453,7 @@ describe("named modules (spike)", () => {
   it("an override provider may resolve the module's other entries", () => {
     const Mod = createModule("Mod", (m) => m.single("base", () => 10).single("derived", (r) => r.Mod.base() * 2));
     const Fake = Mod.override((o) => o.with("derived", (r) => r.Mod.base() + 1));
-    const app = createContainer(Mod, Fake);
+    const app = createContainer({ parts: [Mod, Fake] });
     expect(app.Mod.derived()).toBe(11);
   });
 
@@ -428,7 +462,7 @@ describe("named modules (spike)", () => {
     // unused override (target not in the wiring)
     const Other = createModule("Other", (m) => m.single("y", () => 2));
     const fake = Mod.override((o) => o.with("x", () => 9));
-    expect(() => createContainer(Other, fake)).toThrowError(/not part of this container's wiring/);
+    expect(() => createContainer({ parts: [Other, fake] })).toThrowError(/not part of this container's wiring/);
     // empty override
     expect(() => Mod.override((o) => o)).toThrowError(/replaces nothing/);
     // duplicate replacement of one entry
@@ -456,7 +490,7 @@ describe("named modules (spike)", () => {
     const Fake = Mod.override((o) =>
       o.withAsync("mint", async () => (fakes += 1)).withAsync("session", async () => ({ kind: "fake" })),
     );
-    const app = createContainer(Mod, Fake);
+    const app = createContainer({ parts: [Mod, Fake] });
     expect(await app.Mod.mint()).toBe(1);
     expect(await app.Mod.mint()).toBe(2); // factory: fresh per call
     const scope = app.scope();
@@ -519,7 +553,7 @@ describe("named modules (spike)", () => {
           return 1;
         }),
       );
-      const app = createContainer(Core);
+      const app = createContainer({ parts: [Core] });
       // @ts-expect-error sync accessor does not return a promise
       const bad: Promise<Logger> = app.Core.logger();
       // @ts-expect-error unknown accessor name
@@ -535,7 +569,7 @@ describe("named modules (spike)", () => {
     // The engine's guarantees flow through: the named layer is a facade.
     const Core = createModule("Core", (m) => m.single("x", () => 1));
     const Lazy = createModule("Lazy", { uses: [Core] }, (m) => m.single("poker", (r) => ({ poke: () => r.Core.x() })));
-    const app = createContainer(Lazy);
+    const app = createContainer({ parts: [Lazy] });
     const poker = app.Lazy.poker();
     expect(poker.poke()).toBe(1);
     await app.dispose();

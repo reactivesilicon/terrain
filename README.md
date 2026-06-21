@@ -121,7 +121,7 @@ const UseCases = createModule("UseCases", { uses: [Data, Infra] }, (m) =>
 
 // Compose. Passing UseCases wires Data and Infra transitively, but only
 // UseCases is exposed as a public namespace.
-const app = createContainer(UseCases);
+const app = createContainer({ parts: [UseCases] });
 const findUser = app.UseCases.findUser(); // FindUserUseCase
 
 findUser.execute("1"); // typed, token-free
@@ -174,7 +174,7 @@ const Domain = createModule("Domain", { uses: [Data] }, (m) =>
 **Wiring is transitive; exposure is explicit.** When you compose a container, every `uses` dependency is loaded automatically — `Domain` pulls in `Data`, which pulls in `Infra`. But only the modules you pass to `createContainer` get a public namespace:
 
 ```ts
-const app = createContainer(Domain); // Data and Infra are wired, but hidden
+const app = createContainer({ parts: [Domain] }); // Data and Infra are wired, but hidden
 
 app.Domain.userService().getUser("1"); // ok
 app.Data; // type error — Data is wired but not exposed
@@ -183,7 +183,7 @@ app.Data; // type error — Data is wired but not exposed
 This makes layer boundaries a compile-time fact: callers cannot reach past the namespaces the composition root exposes. Pass the lower modules too if you want their namespaces:
 
 ```ts
-const app = createContainer(Infra, Data, Domain); // all three exposed
+const app = createContainer({ parts: [Infra, Data, Domain] }); // all three exposed
 ```
 
 **`uses` only accepts modules that already exist**, so a module can never (transitively) depend on itself — cross-module cycles are unwritable.
@@ -276,7 +276,7 @@ const Infra = createModule("Infra", (m) =>
   }),
 );
 
-const app = createContainer(Infra);
+const app = createContainer({ parts: [Infra] });
 
 const db = await app.Infra.database(); // () => Promise<Database>
 ```
@@ -295,7 +295,7 @@ const Infra = createModule("Infra", (m) =>
   }),
 );
 
-const app = createContainer(Infra);
+const app = createContainer({ parts: [Infra] });
 await app.start(); // constructs every eager singleton, in parallel
 server.listen(3000); // first request hits warm caches
 ```
@@ -362,7 +362,7 @@ class SilentLogger implements Logger {
 
 const FakeInfra = Infra.override((o) => o.with("logger", (): Logger => new SilentLogger()));
 
-const app = createContainer(UseCases, FakeInfra); // real wiring + the fake
+const app = createContainer({ parts: [UseCases, FakeInfra] }); // real wiring + the fake
 app.UseCases.findUser().execute("1"); // runs against the fake logger
 ```
 
@@ -493,10 +493,23 @@ Sync methods (`single`, `factory`, `scoped`) receive a resolver with only sync e
 ### `createContainer`
 
 ```ts
-function createContainer(...parts): ContainerView;
+function createContainer<Parts>(config: { options?: ContainerOptions; parts: Parts }): ContainerView<Parts>;
 ```
 
-`parts` are modules and module overrides, mixed in one list. Modules passed here are exposed as namespaces; their `uses` dependencies are wired transitively but not exposed. Overrides rewire their target module without exposing a namespace.
+`config.parts` are modules and module overrides, mixed in one list. Modules passed here are exposed as namespaces; their `uses` dependencies are wired transitively but not exposed. Overrides rewire their target module without exposing a namespace.
+
+`config.options` configures the root engine container, and scopes inherit those options:
+
+```ts
+const app = createContainer({
+  options: {
+    onDisposeError: (error) => report(error),
+  },
+  parts: [UseCases],
+});
+```
+
+`options.onDisposeError` observes disposal failures for orphaned in-flight instances only: a resolution that finishes after `dispose()` or `unload()` already evicted its token is disposed immediately, and failures from that orphan disposal are reported to the hook. Normal `dispose()` and `unload()` disposal failures are not reported there; those methods still reject with an `AggregateError`.
 
 The returned view exposes one namespace per exposed module, plus:
 

@@ -77,7 +77,10 @@ const actionsModule = createModule("UseCases", { uses: [dataModule, infraModule]
 
 async function main() {
   // Passing Data auto-wires Infra; passing Infra too exposes its namespace.
-  const app = createContainer(infraModule, dataModule, actionsModule);
+  const app = createContainer({
+    parts: [infraModule, dataModule, actionsModule],
+    options: { onDisposeError: (e) => console.error("orphan dispose failed:", e) },
+  });
 
   console.log("user:", app.Data.userRepo().find("1")); // typed, token-free
   console.log("use case:", app.UseCases.findUser().execute("1"));
@@ -92,7 +95,7 @@ async function main() {
 
   // Testing: override Infra's logger without touching Data's wiring.
   const FakeInfra = infraModule.override((o) => o.with("logger", (): Logger => new TestLogger()));
-  const testApp = createContainer(infraModule, dataModule, actionsModule, FakeInfra);
+  const testApp = createContainer({ parts: [infraModule, dataModule, actionsModule, FakeInfra] });
   console.log("with fake logger:", testApp.UseCases.findUser().execute("1"));
   await testApp.dispose();
 }

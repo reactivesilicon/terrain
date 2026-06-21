@@ -25,7 +25,7 @@
 
 The engine `Container` accepts `ContainerOptions`, but the composition API has no
 way to pass them: `createContainer` builds the root with `new Container()`, so the
-`onDisposeError` hook (which observes disposal failures of *orphaned* in-flight
+`onDisposeError` hook (which observes disposal failures of _orphaned_ in-flight
 instances — resolutions that completed after `dispose()`/`unload()` already evicted
 their token) is unreachable through the public API. Composition users silently lose
 that signal. The design spike (plan 003) chose the **config-object form** as the
@@ -36,6 +36,7 @@ const app = createContainer({ options: { onDisposeError }, parts: [Infra, Data] 
 ```
 
 **Decision (from the maintainer, recorded here so this plan is self-contained):**
+
 - Adopt the config object as the **sole** form. **Remove** the variadic
   `createContainer(...parts)`. This is a breaking change; the maintainer has
   accepted it because migration is a one-line, mechanical edit per call site, and
@@ -75,7 +76,7 @@ export function createContainer<const Parts extends readonly ContainerPart[]>(..
     }
   }
 
-  const container = new Container();                 // <-- options not threaded
+  const container = new Container(); // <-- options not threaded
   for (const wiringModule of wiring) {
     container.load(wiringModule.kernelModule);
   }
@@ -118,29 +119,30 @@ the function's input shape changes. This file already imports from `../types`
 
 ### Migration surface (all `createContainer(` call sites — verified counts)
 
-| File | Calls | Notes |
-|------|-------|-------|
-| `README.md` | 7 calls + 1 signature doc at line 496 | Code snippets + the `### createContainer` API section |
-| `examples/public-api-usage.ts` | 2 | `createContainer(infraModule, dataModule, actionsModule)` and the override one |
-| `test/runs/module-composition.test.ts` | 29 | The bulk — mechanical |
-| `test/runs/types.test.ts` | 2 | The plan 004 type-net file; migrate + extend |
+| File                                   | Calls                                 | Notes                                                                          |
+| -------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------ |
+| `README.md`                            | 7 calls + 1 signature doc at line 496 | Code snippets + the `### createContainer` API section                          |
+| `examples/public-api-usage.ts`         | 2                                     | `createContainer(infraModule, dataModule, actionsModule)` and the override one |
+| `test/runs/module-composition.test.ts` | 29                                    | The bulk — mechanical                                                          |
+| `test/runs/types.test.ts`              | 2                                     | The plan 004 type-net file; migrate + extend                                   |
 
 `examples/engine.ts` uses raw `new Container()` (deep-import kernel example) and is
 **not** affected.
 
 ## Commands you will need
 
-| Purpose             | Command                                                                                  | Expected                          |
-|---------------------|------------------------------------------------------------------------------------------|-----------------------------------|
-| Typecheck all       | `bun run typecheck:all`                                                                  | exit 0 (src + test + examples)    |
-| Run suite           | `bun run test`                                                                           | all pass (≥178; +1 new test)      |
-| Full gate           | `bun run quality`                                                                       | exit 0                            |
-| Run public example  | `bun examples/public-api-usage.ts`                                                       | prints output, exit 0             |
+| Purpose                | Command                                                                                                                           | Expected                          |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Typecheck all          | `bun run typecheck:all`                                                                                                           | exit 0 (src + test + examples)    |
+| Run suite              | `bun run test`                                                                                                                    | all pass (≥178; +1 new test)      |
+| Full gate              | `bun run quality`                                                                                                                 | exit 0                            |
+| Run public example     | `bun examples/public-api-usage.ts`                                                                                                | prints output, exit 0             |
 | Find un-migrated calls | `grep -rn 'createContainer(' README.md examples/ test/ src/ \| grep -v 'function createContainer' \| grep -v 'createContainer({'` | no output when migration complete |
 
 ## Scope
 
 **In scope** (the only files you modify):
+
 - `src/module-composition/composition.ts` — new signature + body.
 - `src/module-composition/types.ts` — add `ContainerConfig<Parts>`; import `ContainerOptions`.
 - `src/module-composition/index.ts` — export `ContainerConfig` and `ContainerOptions`.
@@ -151,6 +153,7 @@ the function's input shape changes. This file already imports from `../types`
 - `package.json` — bump `version` `1.1.0` → `1.2.0` (see Step 7; defer if you do releases separately).
 
 **Out of scope** (do NOT touch):
+
 - `examples/engine.ts` — uses raw `Container`; unaffected.
 - `src/container/` and `src/types.ts`'s `ContainerOptions` **semantics** — only
   surface the existing hook; do not broaden it to observe normal dispose/unload
@@ -214,7 +217,7 @@ export function createContainer<const Parts extends readonly ContainerPart[]>(
     }
   }
 
-  const container = new Container(options);   // options now threaded into the root
+  const container = new Container(options); // options now threaded into the root
   for (const wiringModule of wiring) {
     container.load(wiringModule.kernelModule);
   }
@@ -233,6 +236,7 @@ which should be green now.)
 ### Step 3: Export `ContainerOptions` and `ContainerConfig` publicly
 
 In `src/module-composition/index.ts`:
+
 - Add `ContainerConfig` to the `export type { ... } from "./types"` line.
 - Add `export type { ContainerOptions } from "../types";`.
 
@@ -240,6 +244,7 @@ Both flow to the package root because `src/index.ts` does
 `export * from "./module-composition"` — no edit to `src/index.ts` is required.
 
 **Verify**:
+
 - `bun run typecheck` → exit 0.
 - `grep -rn 'ContainerOptions\|ContainerConfig' src/module-composition/index.ts` →
   shows both exported.
@@ -258,6 +263,7 @@ const app = createContainer({
 ```
 
 **Verify**:
+
 - `bun run typecheck:examples` → exit 0.
 - `bun examples/public-api-usage.ts` → runs, exit 0.
 
@@ -278,17 +284,28 @@ it("createContainer threads onDisposeError to observe orphan disposal failures",
       "resource",
       async () => {
         await new Promise((r) => setTimeout(r, 30));
-        return { close: () => { throw new Error("orphan-dispose"); } };
+        return {
+          close: () => {
+            throw new Error("orphan-dispose");
+          },
+        };
       },
       { dispose: (x) => x.close() },
     ),
   );
-  const app = createContainer({ options: { onDisposeError: (e) => { hookError = e; } }, parts: [Infra] });
+  const app = createContainer({
+    options: {
+      onDisposeError: (e) => {
+        hookError = e;
+      },
+    },
+    parts: [Infra],
+  });
 
   const pending = app.Infra.resource();
   pending.catch(() => {}); // caller sees DisposedContainerError; not asserted here
   await new Promise((r) => setTimeout(r, 5));
-  await app.dispose();                 // evicts the token while resolution is in flight
+  await app.dispose(); // evicts the token while resolution is in flight
   await new Promise((r) => setTimeout(r, 10));
 
   expect(hookError instanceof Error && (hookError as Error).message === "orphan-dispose").toBeTruthy();
@@ -299,6 +316,7 @@ Use whatever `delay`/timing helpers that file already uses if present (check its
 imports); otherwise inline `setTimeout` as above.
 
 **Verify**:
+
 - `bun run typecheck:test` → exit 0 (all migrated assertions compile).
 - `bun run test` → all pass, including the new test.
 
@@ -343,6 +361,7 @@ does not error as expected — STOP and report).
    process sets the version separately, skip this and note it in the PR.)
 
 **Verify**:
+
 - `grep -rn 'createContainer(' README.md examples/ test/ src/ | grep -v 'function createContainer' | grep -v 'createContainer({'`
   → **no output** (every call site uses the config form).
 - The README no longer shows `createContainer(...parts)` as the signature.
@@ -350,6 +369,7 @@ does not error as expected — STOP and report).
 ### Step 8: Full gate
 
 **Verify** (all must pass):
+
 - `bun run quality` → exit 0 (lint, format, `typecheck:all` incl. examples, tests + coverage).
 - `bun examples/public-api-usage.ts` and `bun examples/engine.ts` → exit 0.
 
@@ -397,6 +417,7 @@ Stop and report back (do not improvise) if:
 ## Maintenance notes
 
 For whoever owns this next:
+
 - This is a breaking change shipping in 1.2.0 by maintainer decision (migration is
   a one-line edit per call site). Reviewer should confirm the config key names
   (`options`/`parts`) are the intended public surface before merge.

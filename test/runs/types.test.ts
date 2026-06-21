@@ -1,6 +1,6 @@
 import { describe, expectTypeOf, it } from "vitest";
 
-import { createContainer, createModule } from "../../src";
+import { createContainer, createModule, type ContainerConfig, type ContainerOptions } from "../../src";
 
 // Positive type-contract assertions. These are no-ops at runtime; their
 // enforcement path is `bun run typecheck:test` (tsc -p tsconfig.test.json),
@@ -21,7 +21,7 @@ describe("public type contract (positive assertions)", () => {
     const Infra = createModule("Infra", (m) =>
       m.single("logger", (): Logger => ({ info() {} })).singleAsync("config", async () => ({ env: "prod" as const })),
     );
-    const app = createContainer(Infra);
+    const app = createContainer({ parts: [Infra] });
 
     expectTypeOf(app.Infra.logger).toEqualTypeOf<() => Logger>();
     expectTypeOf(app.Infra.logger()).toEqualTypeOf<Logger>();
@@ -51,12 +51,37 @@ describe("public type contract (positive assertions)", () => {
 
   it("the container view exposes namespaces plus lifecycle methods", () => {
     const Infra = createModule("Infra", (m) => m.single("logger", (): Logger => ({ info() {} })));
-    const app = createContainer(Infra);
+    const app = createContainer({ parts: [Infra] });
 
     expectTypeOf(app.Infra).toEqualTypeOf<{ readonly logger: () => Logger }>();
     expectTypeOf(app.start).toEqualTypeOf<() => Promise<void>>();
     expectTypeOf(app.dispose).toEqualTypeOf<() => Promise<void>>();
     expectTypeOf(app.scope).toBeFunction();
+  });
+
+  it("createContainer accepts a config object and infers namespaces from parts", () => {
+    const Infra = createModule("Infra", (m) => m.single("logger", (): Logger => ({ info() {} })));
+
+    const a = createContainer({ parts: [Infra] });
+    expectTypeOf(a.Infra).toEqualTypeOf<{ readonly logger: () => Logger }>();
+
+    const options: ContainerOptions = { onDisposeError() {} };
+    const b = createContainer({ options: options, parts: [Infra] });
+    expectTypeOf(b.Infra).toEqualTypeOf<{ readonly logger: () => Logger }>();
+
+    const config: ContainerConfig<readonly [typeof Infra]> = { parts: [Infra] };
+    const c = createContainer({ ...config });
+    expectTypeOf(c.Infra).toEqualTypeOf<{ readonly logger: () => Logger }>();
+
+    void function compileOnly() {
+      const compose = createContainer;
+      // @ts-expect-error parts is required
+      createContainer({});
+      // @ts-expect-error unknown option key is rejected
+      createContainer({ options: { nope: true }, parts: [Infra] });
+      // @ts-expect-error the variadic form was removed
+      compose(Infra);
+    };
   });
 
   it("override .with/.withAsync infer the original entry's value type", () => {

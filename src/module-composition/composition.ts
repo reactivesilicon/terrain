@@ -38,6 +38,7 @@ import type { ModuleOverride } from "./module-override/module-override";
 import type {
   ComposedModuleBuilder,
   ComposedModuleName,
+  ContainerConfig,
   ContainerPart,
   ContainerView,
   ModuleEntryMap,
@@ -184,7 +185,10 @@ export function createModule(
   return module;
 }
 
-export function createContainer<const Parts extends readonly ContainerPart[]>(...parts: Parts): ContainerView<Parts> {
+export function createContainer<const Parts extends readonly ContainerPart[]>(
+  config: ContainerConfig<Parts>,
+): ContainerView<Parts> {
+  const { options = {}, parts } = config;
   const exposed: ComposedModuleInternals[] = [];
   const overrides: OverrideInternals[] = [];
   for (const part of parts) {
@@ -203,7 +207,7 @@ export function createContainer<const Parts extends readonly ContainerPart[]>(..
     }
   }
 
-  const container = new Container();
+  const container = new Container(options);
   for (const wiringModule of wiring) {
     container.load(wiringModule.kernelModule);
   }

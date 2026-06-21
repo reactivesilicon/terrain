@@ -18,7 +18,7 @@ selected work is DX hardening, documentation accuracy, and one design spike.
 | 003  | Spike: `createContainer(options, ...parts)` design         | P3       | S      | —          | DONE   |
 | 004  | Pin the public type contract with positive `expectTypeOf`  | P2       | M      | —          | DONE   |
 | 005  | Contain the composition-builder casts into named seams     | P3       | M      | 004        | DONE   |
-| 006  | Implement `createContainer({ options, parts })` (breaking)  | P2       | M      | 003        | TODO   |
+| 006  | Implement `createContainer({ options, parts })` (breaking) | P2       | M      | 003        | DONE   |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 

@@ -2,7 +2,7 @@
 
 import type { Simplify, UnionToIntersection } from "../kernel/types";
 import { type TokenMode, TokenModes } from "../token";
-import type { DefinitionOptions, SingletonDefinitionOptions } from "../types";
+import type { ContainerOptions, DefinitionOptions, SingletonDefinitionOptions } from "../types";
 import type { ComposedModule } from "./composed-module";
 import type { ModuleEntryName } from "./module-entry-definitions";
 import type { ModuleOverride } from "./module-override/module-override";
@@ -185,6 +185,13 @@ export interface OverrideBuilder<ModuleName extends ComposedModuleName, ModuleEn
 /** What createContainer accepts: modules (exposed as namespaces) and module
  *  overrides (rewire only), mixed in one list. */
 export type ContainerPart = ComposedModule<ComposedModuleName, ModuleEntryMap> | ModuleOverride<ComposedModuleName>;
+
+/** Input to createContainer: the modules/overrides to compose, plus optional
+ *  root ContainerOptions (e.g. onDisposeError). Scopes inherit these options. */
+export interface ContainerConfig<Parts extends readonly ContainerPart[]> {
+  readonly parts: Parts;
+  readonly options?: ContainerOptions;
+}
 
 export type Namespaces<Parts extends readonly ContainerPart[]> = UnionToIntersection<NamespaceOf<Parts[number]>>;
 
