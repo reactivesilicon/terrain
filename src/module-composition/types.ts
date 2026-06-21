@@ -3,10 +3,11 @@
 import type { Simplify, UnionToIntersection } from "../kernel/types";
 import { type TokenMode, TokenModes } from "../token";
 import type { ContainerOptions, DefinitionOptions, SingletonDefinitionOptions } from "../types";
-import type { ReservedModuleName } from "../validations/reserved-module-names";
 import type { ComposedModule } from "./composed-module";
 import type { ModuleEntryName } from "./module-entry-definitions";
 import type { ModuleOverride } from "./module-override/module-override";
+
+export type { PublicModuleName } from "./module-name-types";
 
 // ── type-level model ────────────────────────────────────────────────────────
 // Each named definition contributes one Entry to its module's EntryMap. The
@@ -219,7 +220,3 @@ export type ScopeView<Parts extends readonly ContainerPart[]> = Simplify<
     dispose(): Promise<void>;
   }
 >;
-
-/** A module name may be any identifier except a reserved view-method name.
- *  Identifier-ness is enforced at runtime; the type guard covers reserved names. */
-export type PublicModuleName<Name extends string> = Name extends ReservedModuleName ? never : Name;

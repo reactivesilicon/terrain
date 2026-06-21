@@ -96,16 +96,35 @@ describe("public type contract (positive assertions)", () => {
     expectTypeOf(Infra.override).toBeFunction();
   });
 
-  it("module names: any identifier accepted, reserved view words rejected", () => {
+  it("module names: valid identifiers accepted, invalid literal names rejected", () => {
     const infra = createModule("infra", (m) => m.single("logger", (): Logger => ({ info() {} })));
-    const app = createContainer({ parts: [infra] });
+    const data2 = createModule("data2", (m) => m.single("logger", (): Logger => ({ info() {} })));
+    const $data = createModule("$data", (m) => m.single("logger", (): Logger => ({ info() {} })));
+    const _data = createModule("_data", (m) => m.single("logger", (): Logger => ({ info() {} })));
+    const app = createContainer({ parts: [infra, data2, $data, _data] });
 
     expectTypeOf(app.infra.logger()).toEqualTypeOf<Logger>();
     expectTypeOf(app.infra.logger()).not.toBeAny();
+    expectTypeOf(app.data2.logger()).toEqualTypeOf<Logger>();
+    expectTypeOf(app.data2.logger()).not.toBeAny();
+    expectTypeOf(app.$data.logger()).toEqualTypeOf<Logger>();
+    expectTypeOf(app.$data.logger()).not.toBeAny();
+    expectTypeOf(app._data.logger()).toEqualTypeOf<Logger>();
+    expectTypeOf(app._data.logger()).not.toBeAny();
 
     void function compileOnly() {
       // @ts-expect-error 'dispose' is a reserved view-method name
       createModule("dispose", (m) => m.single("x", () => 1));
+      // @ts-expect-error spaces are not valid module identifiers
+      createModule("data 2", (m) => m.single("x", () => 1));
+      // @ts-expect-error module names cannot start with a digit
+      createModule("2data", (m) => m.single("x", () => 1));
+      // @ts-expect-error hyphen is not valid in module identifiers
+      createModule("data-name", (m) => m.single("x", () => 1));
+      // @ts-expect-error dot is not valid in module identifiers
+      createModule("data.name", (m) => m.single("x", () => 1));
+      // @ts-expect-error empty string is not a valid module identifier
+      createModule("", (m) => m.single("x", () => 1));
     };
   });
 });
