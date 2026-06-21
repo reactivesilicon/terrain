@@ -42,7 +42,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **007 → 008 implement "Tier 1 free module names"**: the maintainer wants
   non-restrictive module/entry naming. Exploration found the restrictions split
   cleanly: 007 is a **bug fix** (null-prototype accessors/namespaces/views — entries
-  named `source`/`accessorCache`/`toString` silently misresolve *today*), and 008 is
+  named `source`/`accessorCache`/`toString` silently misresolve _today_), and 008 is
   the **API relaxation** (drop PascalCase → any identifier except the reserved view
   methods `scope`/`start`/`dispose`). 008 depends on 007 because the null-proto views
   are what make module names like `toString`/`__proto__` safe, shrinking the reserved

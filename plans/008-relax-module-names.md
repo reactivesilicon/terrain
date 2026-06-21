@@ -30,13 +30,13 @@
 
 Module names are currently forced to **PascalCase** (`^[A-Z][A-Za-z0-9_$]*$`). The
 rule exists so module namespaces (on the container view) can never collide with the
-view's lowercase methods `scope`/`start`/`dispose` — *"no reserved-word list to
-maintain."* The maintainer wants consumers to name modules freely (e.g. `infra`,
+view's lowercase methods `scope`/`start`/`dispose` — _"no reserved-word list to
+maintain."_ The maintainer wants consumers to name modules freely (e.g. `infra`,
 `userService`) and is fine keeping only the genuine view methods reserved. After
 plan 007 made the view objects null-prototype, the **only** names that can collide
 are those three methods — so the PascalCase straightjacket can be replaced with a
 tiny, explicit reserved set. This is **non-breaking**: PascalCase names remain
-valid; the change only *widens* what's accepted. Entry names already allow any
+valid; the change only _widens_ what's accepted. Entry names already allow any
 identifier and are unchanged here.
 
 ## Current state
@@ -127,16 +127,17 @@ PascalCase identifiers (`InvalidModuleNameError`)").
 
 ## Commands you will need
 
-| Purpose            | Command                                       | Expected                       |
-|--------------------|-----------------------------------------------|--------------------------------|
-| Typecheck all      | `bun run typecheck:all`                       | exit 0                         |
-| Composition tests  | `bun run test -- module-composition`          | pass                           |
-| Full gate          | `bun run quality`                             | exit 0                         |
-| No stale PascalCase | `grep -rni 'pascalcase' src/ README.md`      | no matches when done           |
+| Purpose             | Command                                 | Expected             |
+| ------------------- | --------------------------------------- | -------------------- |
+| Typecheck all       | `bun run typecheck:all`                 | exit 0               |
+| Composition tests   | `bun run test -- module-composition`    | pass                 |
+| Full gate           | `bun run quality`                       | exit 0               |
+| No stale PascalCase | `grep -rni 'pascalcase' src/ README.md` | no matches when done |
 
 ## Scope
 
 **In scope** (the only files you modify):
+
 - `src/validations/name-validations.ts` — new rule + reserved set.
 - `src/errors.ts` — `InvalidModuleNameError` message.
 - `src/module-composition/types.ts` — replace `PascalCase` with `PublicModuleName` + `ReservedViewWord`.
@@ -146,6 +147,7 @@ PascalCase identifiers (`InvalidModuleNameError`)").
 - `README.md` — update the naming claims.
 
 **Out of scope** (do NOT touch):
+
 - Accessor / namespace / view internals — plan 007 owns those.
 - Entry-name validation (`isIdentifierName` for entries stays; entries are already
   free within identifiers).
@@ -315,6 +317,7 @@ valid; you are only correcting the prose, not the snippets.
 ### Step 7: Full gate
 
 **Verify** (all must pass):
+
 - `bun run quality` → exit 0.
 - `bun examples/public-api-usage.ts` and `bun examples/engine.ts` → exit 0.
 
@@ -359,6 +362,7 @@ Stop and report back (do not improvise) if:
 ## Maintenance notes
 
 For whoever owns this next:
+
 - **The reserved list is now a maintained invariant.** Any new method added to the
   container view (beyond `scope`/`start`/`dispose`) MUST be added to both
   `RESERVED_MODULE_NAMES` and `ReservedViewWord`; the guard test enforces this.

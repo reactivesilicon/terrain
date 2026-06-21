@@ -66,7 +66,7 @@ export class AccessorPrototype<Source extends SyncResolver> {
       Object.defineProperty(this, name, {
         enumerable: true,
         get(this: AccessorInstance<Source>) {
-          const cached = this.accessorCache[name];   // cache is a plain {} → "toString" hits Object.prototype
+          const cached = this.accessorCache[name]; // cache is a plain {} → "toString" hits Object.prototype
           if (cached) return cached;
           const source = this.source;
           const accessor = () => resolve(source);
@@ -81,8 +81,8 @@ export class AccessorPrototype<Source extends SyncResolver> {
   instantiate(source: Source): object {
     const instance = Object.create(this) as AccessorInstance<Source>;
     Object.defineProperties(instance, {
-      source: { value: source },          // string own props → shadow entry getters named "source"/"accessorCache"
-      accessorCache: { value: {} },       // plain {} → "toString" key collision
+      source: { value: source }, // string own props → shadow entry getters named "source"/"accessorCache"
+      accessorCache: { value: {} }, // plain {} → "toString" key collision
     });
     return Object.freeze(instance);
   }
@@ -133,22 +133,23 @@ export function buildContainerView<...>(container, exposedModules): ContainerVie
 }
 ```
 
-Repo convention (`STATUS.md`): *"Names do the narration; comments do the proofs"* —
+Repo convention (`STATUS.md`): _"Names do the narration; comments do the proofs"_ —
 the Symbol/null-proto choices each get a one-line comment proving why they're safe.
 
 ## Commands you will need
 
-| Purpose            | Command                                            | Expected                          |
-|--------------------|----------------------------------------------------|-----------------------------------|
-| Typecheck all      | `bun run typecheck:all`                            | exit 0                            |
-| Accessor tests     | `bun run test -- accessors`                       | pass                              |
-| Composition tests  | `bun run test -- module-composition`              | pass                              |
-| Full gate          | `bun run quality`                                 | exit 0                            |
-| Run examples       | `bun examples/public-api-usage.ts && bun examples/engine.ts` | both exit 0              |
+| Purpose           | Command                                                      | Expected    |
+| ----------------- | ------------------------------------------------------------ | ----------- |
+| Typecheck all     | `bun run typecheck:all`                                      | exit 0      |
+| Accessor tests    | `bun run test -- accessors`                                  | pass        |
+| Composition tests | `bun run test -- module-composition`                         | pass        |
+| Full gate         | `bun run quality`                                            | exit 0      |
+| Run examples      | `bun examples/public-api-usage.ts && bun examples/engine.ts` | both exit 0 |
 
 ## Scope
 
 **In scope** (the only files you modify):
+
 - `src/accessors.ts` — null-prototype carrier + Symbol-keyed `source`/`cache`.
 - `src/module-composition/module-namespaces.ts` — null-proto namespace objects (both spots).
 - `src/module-composition/container-views.ts` — null-proto view objects (both spots).
@@ -156,6 +157,7 @@ the Symbol/null-proto choices each get a one-line comment proving why they're sa
 - `test/runs/module-composition.test.ts` — add the end-to-end regression test.
 
 **Out of scope** (do NOT touch):
+
 - Name validation / the PascalCase rule — that is plan 008. This plan changes **no
   public API and no accepted-name set**; entries named `source` etc. are already
   legal identifiers, this just makes them work.
@@ -289,7 +291,10 @@ export function buildContainerView<Parts extends readonly ContainerPart[]>(
 ```ts
 it("entries named like accessor internals (source/accessorCache/toString) resolve to their values", () => {
   const M = createModule("M", (m) =>
-    m.single("source", () => "S").single("accessorCache", () => "C").single("toString", () => "T"),
+    m
+      .single("source", () => "S")
+      .single("accessorCache", () => "C")
+      .single("toString", () => "T"),
   );
   const app = createContainer({ parts: [M] });
   expect(app.M.source()).toBe("S");
@@ -298,8 +303,7 @@ it("entries named like accessor internals (source/accessorCache/toString) resolv
 });
 ```
 
-(Note: this uses the config-object `createContainer({ parts: [...] })` form from plan
-006. If plan 006 is not yet landed on your branch, use the variadic form
+(Note: this uses the config-object `createContainer({ parts: [...] })` form from plan 006. If plan 006 is not yet landed on your branch, use the variadic form
 `createContainer(M)` instead and leave a `// TODO: config form once 006 lands` note.)
 
 **Verify**: `bun run test` → all pass, including the two new tests.
@@ -307,6 +311,7 @@ it("entries named like accessor internals (source/accessorCache/toString) resolv
 ### Step 5: Full gate
 
 **Verify** (all must pass):
+
 - `bun run quality` → exit 0.
 - `bun examples/public-api-usage.ts` and `bun examples/engine.ts` → exit 0.
 - Plan 004's `test/runs/types.test.ts` assertions still hold (covered by `quality`).
@@ -352,6 +357,7 @@ Stop and report back (do not improvise) if:
 ## Maintenance notes
 
 For whoever owns this next:
+
 - This is the foundation for plan 008 (dropping PascalCase on module names): once
   the view is null-prototype, a module named `toString`/`constructor`/`__proto__`
   is just a namespace key and can't shadow a built-in, so the only reserved module
