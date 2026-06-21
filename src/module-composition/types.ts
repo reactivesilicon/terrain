@@ -106,7 +106,7 @@ export interface ComposedModuleBuilder<
 > {
   single<const EntryName extends ModuleEntryName, T>(
     entryName: PublicModuleEntryName<EntryName>,
-    provider: (r: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
+    provider: (resolver: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
     options?: SingletonDefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
@@ -116,7 +116,7 @@ export interface ComposedModuleBuilder<
 
   singleAsync<const EntryName extends ModuleEntryName, T>(
     entryName: PublicModuleEntryName<EntryName>,
-    provider: (r: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
+    provider: (resolver: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
     options?: SingletonDefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
@@ -126,7 +126,7 @@ export interface ComposedModuleBuilder<
 
   factory<const EntryName extends ModuleEntryName, T>(
     entryName: PublicModuleEntryName<EntryName>,
-    provider: (r: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
+    provider: (resolver: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
     options?: DefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
@@ -136,7 +136,7 @@ export interface ComposedModuleBuilder<
 
   factoryAsync<const EntryName extends ModuleEntryName, T>(
     entryName: PublicModuleEntryName<EntryName>,
-    provider: (r: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
+    provider: (resolver: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
     options?: DefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
@@ -146,7 +146,7 @@ export interface ComposedModuleBuilder<
 
   scoped<const EntryName extends ModuleEntryName, T>(
     entryName: PublicModuleEntryName<EntryName>,
-    provider: (r: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
+    provider: (resolver: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
     options?: DefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
@@ -156,7 +156,7 @@ export interface ComposedModuleBuilder<
 
   scopedAsync<const EntryName extends ModuleEntryName, T>(
     entryName: PublicModuleEntryName<EntryName>,
-    provider: (r: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
+    provider: (resolver: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
     options?: DefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
