@@ -19,6 +19,8 @@ selected work is DX hardening, documentation accuracy, and one design spike.
 | 004  | Pin the public type contract with positive `expectTypeOf`  | P2       | M      | —          | DONE   |
 | 005  | Contain the composition-builder casts into named seams     | P3       | M      | 004        | DONE   |
 | 006  | Implement `createContainer({ options, parts })` (breaking) | P2       | M      | 003        | DONE   |
+| 007  | Harden accessors/namespaces/views to null-prototype        | P2       | M      | —          | TODO   |
+| 008  | Relax module names (any identifier minus reserved words)   | P3       | M      | 007        | TODO   |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -36,6 +38,17 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 
 > 003's design output was produced on branch `advisor/003-spike-container-options`;
 > its decision is inlined verbatim in plan 006 so 006 is self-contained.
+
+- **007 → 008 implement "Tier 1 free module names"**: the maintainer wants
+  non-restrictive module/entry naming. Exploration found the restrictions split
+  cleanly: 007 is a **bug fix** (null-prototype accessors/namespaces/views — entries
+  named `source`/`accessorCache`/`toString` silently misresolve *today*), and 008 is
+  the **API relaxation** (drop PascalCase → any identifier except the reserved view
+  methods `scope`/`start`/`dispose`). 008 depends on 007 because the null-proto views
+  are what make module names like `toString`/`__proto__` safe, shrinking the reserved
+  set to exactly the three real view methods. Both non-breaking. Tier 2 (arbitrary
+  non-identifier names via bracket access) was explored and deferred — it trades away
+  the dot-access guarantee.
 
 ## Findings considered and rejected (do not re-audit)
 
