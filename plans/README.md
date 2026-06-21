@@ -13,7 +13,7 @@ selected work is DX hardening, documentation accuracy, and one design spike.
 
 | Plan | Title                                                      | Priority | Effort | Depends on | Status |
 | ---- | ---------------------------------------------------------- | -------- | ------ | ---------- | ------ |
-| 001  | Guard examples + public API in the quality gate and CI     | P1       | S      | —          | TODO   |
+| 001  | Guard examples + public API in the quality gate and CI     | P1       | S      | —          | DONE   |
 | 002  | Fix STATUS.md `bench/` drift and decide `skills-lock.json` | P2       | S      | —          | DONE   |
 | 003  | Spike: `createContainer(options, ...parts)` design         | P3       | S      | —          | TODO   |
 | 004  | Pin the public type contract with positive `expectTypeOf`  | P2       | M      | —          | DONE   |

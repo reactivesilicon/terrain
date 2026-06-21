@@ -12,15 +12,15 @@
  * surface and guarantees.
  */
 
-import { createAccessors } from "../src/accessors";
-import { Container } from "../src/container/container";
 import {
   CaptiveDependencyError,
   CircularDependencyError,
   DefinitionInUseError,
   LifecycleOperationError,
   ShadowedDefinitionError,
-} from "../src/errors";
+} from "../src";
+import { createAccessors } from "../src/accessors";
+import { Container } from "../src/container/container";
 import { createModule } from "../src/module";
 import { createAsyncToken, createSyncToken } from "../src/token";
 import type { AsyncResolver, SyncResolver } from "../src/types";

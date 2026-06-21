@@ -30,3 +30,8 @@ jobs:
 
       - name: Build
         run: bun run build
+
+      - name: Run examples
+        run: |
+          bun examples/public-api-usage.ts
+          bun examples/engine.ts
