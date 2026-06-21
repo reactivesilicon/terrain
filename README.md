@@ -6,6 +6,8 @@ A pragmatic TypeScript dependency injection container.
 
 No decorators. No reflection. No runtime dependencies. You define modules by name, declare what each one uses, and compose them into a container. Dependencies are resolved through typed namespaces, with no tokens, no casts, and no service locator plumbing. Wrong wiring fails loudly, and as much of it as possible fails at compile time.
 
+> For the design rationale, guarantees, limits, and how terrain compares to other DI libraries, see [docs/TECHNICAL.md](./docs/TECHNICAL.md).
+
 ## Installation
 
 ```sh
