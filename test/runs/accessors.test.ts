@@ -105,6 +105,30 @@ describe("accessors", () => {
     expect(app.t).toBe(app.t);
   });
 
+  it("accessor names that look like internals resolve their token values", () => {
+    const Source = createSyncToken<string>("fSource");
+    const AccessorCache = createSyncToken<string>("fAccessorCache");
+    const ToString = createSyncToken<string>("fToString");
+    const c = new Container();
+    c.load(
+      createModule((m) => {
+        m.single(Source, () => "S");
+        m.single(AccessorCache, () => "C");
+        m.single(ToString, () => "T");
+      }),
+    );
+
+    const app = createAccessors(c, {
+      source: Source,
+      accessorCache: AccessorCache,
+      toString: ToString,
+    });
+
+    expect(app.source()).toBe("S");
+    expect(app.accessorCache()).toBe("C");
+    expect(app.toString()).toBe("T");
+  });
+
   it("accessors types map sync/async members correctly at compile time", () => {
     // Never executed — typecheck:test fails if any of these stops behaving.
     void function compileOnly(f: Accessors<{ db: Token<number>; cfg: AsyncToken<string> }>) {

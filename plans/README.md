@@ -19,7 +19,7 @@ selected work is DX hardening, documentation accuracy, and one design spike.
 | 004  | Pin the public type contract with positive `expectTypeOf`  | P2       | M      | —          | DONE   |
 | 005  | Contain the composition-builder casts into named seams     | P3       | M      | 004        | DONE   |
 | 006  | Implement `createContainer({ options, parts })` (breaking) | P2       | M      | 003        | DONE   |
-| 007  | Harden accessors/namespaces/views to null-prototype        | P2       | M      | —          | TODO   |
+| 007  | Harden accessors/namespaces/views to null-prototype        | P2       | M      | —          | DONE   |
 | 008  | Relax module names (any identifier minus reserved words)   | P3       | M      | 007        | TODO   |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)

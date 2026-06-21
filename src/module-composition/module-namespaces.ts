@@ -42,7 +42,7 @@ export function createResolverNamespaceBuilder(
     usedPrototype: (used: ComposedModuleInternals) => AccessorPrototype<Source>,
     resolver: Source,
   ): Record<string, unknown> {
-    const namespaces: Record<string, unknown> = {};
+    const namespaces: Record<string, unknown> = Object.create(null);
     for (const used of usedModules) {
       namespaces[used.name] = usedPrototype(used).instantiate(resolver);
     }
@@ -62,7 +62,7 @@ export function buildContainerNamespaces(
   container: Container,
   exposedModules: readonly ComposedModuleInternals[],
 ): Record<string, unknown> {
-  const namespaces: Record<string, unknown> = {};
+  const namespaces: Record<string, unknown> = Object.create(null);
 
   for (const exposedModule of exposedModules) {
     if (exposedModule.name in namespaces) {

@@ -346,6 +346,20 @@ describe("named modules (spike)", () => {
     expect(Object.isFrozen(app)).toBe(true);
   });
 
+  it("entries named like accessor internals resolve to their values", () => {
+    const M = createModule("M", (m) =>
+      m
+        .single("source", () => "S")
+        .single("accessorCache", () => "C")
+        .single("toString", () => "T"),
+    );
+    const app = createContainer({ parts: [M] });
+
+    expect(app.M.source()).toBe("S");
+    expect(app.M.accessorCache()).toBe("C");
+    expect(app.M.toString()).toBe("T");
+  });
+
   it("a used module's entries are not re-exported by the importer", () => {
     const Core = createModule("Core", (m) => m.single("logger", (): Logger => ({ log: (s) => s })));
     const Data = createModule("Data", { uses: [Core] }, (m) => m.single("repo", () => ({})));
