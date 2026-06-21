@@ -157,7 +157,7 @@ createModule("Infra", (m) => {
 });
 ```
 
-**Module names may be any identifier except the view's reserved method names** (`scope`, `start`, `dispose`); **entry names may be any identifier.** Module names are the namespaces, and the reserved list is exactly the view's own methods. The type signature rejects literal reserved module names, and runtime backstops validate the full module and entry names (`InvalidModuleNameError`, `InvalidEntryNameError`).
+**Module names may be any identifier except the view's reserved method names** (`scope`, `start`, `dispose`); **entry names may be any identifier.** Module names are the namespaces, and the reserved list is exactly the view's own methods. The type signature rejects literal reserved module names and non-identifier module or entry names at compile time; runtime backstops re-validate dynamic names (`InvalidModuleNameError`, `InvalidEntryNameError`).
 
 ## Composition with `uses`
 
@@ -380,7 +380,7 @@ The type system catches the wiring mistakes it can express:
 - **Cross-module cycles are unwritable** — `uses` only accepts modules that already exist.
 - **Sync providers can't reach async entries** of their imports.
 - **Unknown module or entry names** are type errors.
-- **Reserved module names** (`scope`, `start`, `dispose`) are rejected before runtime.
+- **Reserved module names** (`scope`, `start`, `dispose`) and **non-identifier module or entry names** are rejected before runtime.
 
 Runtime backstops catch invalid dynamic input and lifecycle failures, each as a `DIError` subclass:
 

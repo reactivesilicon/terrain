@@ -1,22 +1,21 @@
 # terrain — project status
 
-> Maintainer notes. Updated 2026-06-19, branch `leap-q1`.
+> Maintainer notes. Updated 2026-06-21, branch `improvements/1.2.0`.
 
 ## Where things stand
 
-**`main`** holds the released **terrain v1.0.0** token-based API.
+**`main`** holds the released **terrain v1.1.0** composition-first API (commit `8df145a`).
 
 - npm package: **`terrain-di`**; the bare name `terrain` is squatted.
-- Current published npm version checked during release prep: **`1.0.0`**.
 - GitHub Releases is the changelog channel; `CHANGELOG.md` was deliberately removed.
-- The v1 token engine still exists in this branch, but it is no longer the package entrypoint.
-
-**`leap-q1`** is the composition-first public API branch and current release candidate for **`terrain-di@1.1.0`**.
-
 - `src/index.ts` exports `errors`, `module-composition`, and option/disposer types. Tokens, the raw `Container`, and the kernel `ModuleBuilder` are internal implementation details reachable only by deep imports.
-- `README.md` now documents the composition API as the primary API.
-- `package.json` is bumped to `1.1.0`.
-- `npm pack --dry-run` has been verified for `terrain-di@1.1.0`; the tarball contains only `LICENSE`, `README.md`, `dist/index.js`, `dist/index.d.ts`, and `package.json`.
+- `README.md` documents the composition API as the primary API.
+
+**`improvements/1.2.0`** is the working branch for the next release, layered on v1.1.0. `package.json` is still at `1.1.0` — bump to `1.2.0` at release. It carries:
+
+- **Container options through the composition API**: `createContainer({ options, parts })` — a config object (the old variadic `createContainer(...parts)` is removed) that exposes `ContainerOptions.onDisposeError`; scopes inherit it.
+- **Null-prototype accessor/namespace/view hardening** (bug fix): entry names like `source`/`accessorCache`/`toString` previously mis-resolved against internal or `Object.prototype` keys; accessor state is now Symbol-keyed and the namespace/view objects are null-prototype, so any identifier name is safe.
+- **Relaxed module names**: any identifier except the reserved view methods `scope`/`start`/`dispose` (PascalCase is no longer required). Both module and entry names are now validated for identifier-ness at **compile time** (template-literal type guard) as well as at runtime.
 
 ## Public API now
 
@@ -29,13 +28,15 @@ const UseCases = createModule("UseCases", { uses: [Data, Infra] }, (m) =>
   m.single("findUser", (r): FindUserUseCase => new FindUserUseCase(r.Data.userRepo(), r.Infra.logger())),
 );
 
-const app = createContainer(UseCases);
+const app = createContainer({ parts: [UseCases] });
 app.UseCases.findUser().execute("1");
 await app.dispose();
 ```
 
+- **Config-object composition**: `createContainer({ options?, parts })`. `parts` are the modules/overrides to expose+wire; `options` carries engine `ContainerOptions` (currently `onDisposeError`, observed for orphaned in-flight disposal only).
 - **No public tokens**: entry names are the handles; internal tokens are minted as implementation currency.
-- **Typed namespaces**: modules passed to `createContainer` are exposed as namespaces; transitive `uses` dependencies are wired but hidden unless passed explicitly.
+- **Typed namespaces**: modules passed in `parts` are exposed as namespaces; transitive `uses` dependencies are wired but hidden unless passed explicitly.
+- **Free identifier naming**: module names are any identifier except `scope`/`start`/`dispose`; entry names are any identifier. Reserved/non-identifier names fail at compile time, with runtime backstops for dynamic callers.
 - **Chaining is the contract**: builder return types carry the entries registered so far. Imperative registration through a captured builder works at runtime but is invisible to the module type.
 - **One call shape**: container views, scope views, and provider resolvers all resolve through module namespaces and entry accessors.
 - **Sync/async split**: sync providers see only sync entries; async providers see sync and async entries. Async accessors return promises.
@@ -65,19 +66,15 @@ The v1 engine remains the runtime substrate:
 
 The package entrypoint intentionally exports only the composition layer and framework errors. The token engine is an internal implementation detail for the published package surface.
 
-## Release notes for 1.1.0
+## Release notes for 1.2.0 (in progress)
 
-Release positioning:
+Release positioning — everything in v1.1.0, plus:
 
-- Composition-first API.
-- Named modules and typed namespace accessors.
-- Transitive wiring with explicit namespace exposure.
-- Scoped views and callback scopes.
-- Async providers and eager initialization.
-- Module overrides for testing/fakes.
-- Deterministic explicit disposal.
+- Container options via `createContainer({ options, parts })` (exposes `onDisposeError`; scopes inherit).
+- Null-prototype accessor/namespace/view hardening (fixes entry-name collisions like `source`/`toString`).
+- Relaxed module naming (any identifier except `scope`/`start`/`dispose`), with compile-time identifier guards for module and entry names.
 
-Release checks already run locally:
+Release checks run locally:
 
 ```sh
 bun run quality
@@ -86,44 +83,43 @@ npm pack --dry-run
 npm view terrain-di version
 ```
 
-Observed results:
+Observed results (latest run on this branch):
 
 - `bun run quality`: passed.
-- Tests: **173 passed** across **16 files** with coverage gates met.
-- Coverage summary from the latest run: statements 99.85%, branches 99.14%, functions 99.54%, lines 100%.
-- `bun run build`: passed; generated `dist/index.js` and `dist/index.d.ts`.
-- `npm pack --dry-run`: passed for `terrain-di@1.1.0`.
-- npm currently publishes `terrain-di@1.0.0`; `1.1.0` is available to publish.
+- Tests: **184 passed** across **17 files** with coverage gates met.
+- Coverage summary: statements 100%, branches 99.15%, functions 100%, lines 100%.
+- `bun run build`: passed; generates `dist/index.js` and `dist/index.d.ts`.
 
 Before publishing:
 
-- Push `leap-q1` and let CI validate the exact commit.
+- Bump `package.json` to `1.2.0`.
+- Push the branch and let CI validate the exact commit.
+- Confirm the published version with `npm view terrain-di version`, and `npm pack --dry-run` (the tarball should contain only `LICENSE`, `README.md`, `dist/index.js`, `dist/index.d.ts`, `package.json`).
 - Draft GitHub Release notes; no changelog file is expected.
-- Confirm whether the release should be published from `leap-q1` directly or merged/tagged through `main`.
 
 ## Examples
 
 - `examples/public-api-usage.ts`: composition-first public API example with class-based logger/repository/use-case wiring, scopes, async config, and overrides.
 - `examples/engine.ts`: deep-import reference for the internal token kernel. This is advanced/internal documentation, not the package entrypoint story.
 
-There is no `examples/module-composition.ts` in the current tree.
+Both examples are typechecked (`tsc -p examples/tsconfig.json`, part of `typecheck:all`) and run in CI. There is no `examples/module-composition.ts` in the current tree.
 
 ## Deferred / open
 
 These are not current release blockers unless the maintainer decides otherwise:
 
-- **Public type vocabulary**: current exported names include `ComposedModule` and `ModuleOverride`. Earlier notes discussed renaming the layer type to `Module` and the kernel module to `DefinitionSet` at a v2 boundary; that rename is not done in this 1.1.0 candidate.
-- **Composition container options**: `createContainer(...parts)` cannot pass engine `ContainerOptions` such as `onDisposeError`; natural future shape is an overload like `createContainer(options, ...parts)`.
+- **Public type vocabulary**: current exported names include `ComposedModule` and `ModuleOverride`. Earlier notes discussed renaming the layer type to `Module` and the kernel module to `DefinitionSet` at a v2 boundary; that rename is not done.
 - **Module unload/hot-swap at the composition layer**: currently out of scope; `createContainer` is static composition.
 - **Module-name aliasing**: only likely to matter if a third-party module ecosystem emerges.
 - **Optional resolution**: no `getOrNull`-style API.
 - **Engine wait-for graph**: the v1 coalesced async cycle deadlock remains an engine-level future item, but the composition layer's typed API makes those cycles unwritable in normal use.
-- **Zero-cast accessor typing**: possible future cleanup around branded accessor prototypes and split builders.
+- **Zero-cast accessor typing**: the composition builder still has two documented type-erasure seams (the phantom-builder casts); full zero-cast typing is a possible future cleanup.
+- **Broader disposal-error hook**: `onDisposeError` observes orphaned in-flight disposal only; a hook that also observes normal `dispose()`/`unload()` failures was considered and deferred.
 
 ## Engineering infrastructure
 
 - Test runner: Vitest via `bun run test`; `bun test` is not the configured runner.
-- Full gate: `bun run quality` = oxlint + oxfmt + source typecheck + test typecheck + coverage-gated Vitest.
+- Full gate: `bun run quality` = oxlint + oxfmt + typechecks (`typecheck:all` = source + test + examples) + coverage-gated Vitest.
 - Build: `bun run build` via `tsdown`.
 - Fuzzers print `TEST_SEED` for replay:
   - `test/runs/stress.test.ts`
