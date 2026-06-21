@@ -29,7 +29,7 @@
 ## Why this matters
 
 The composed-module builder erases provider types through six casts. Four of them
-(`provider as any`) are the *same* operation — turning a richly-typed provider into
+(`provider as any`) are the _same_ operation — turning a richly-typed provider into
 the type-erased shape the engine stores and invokes — scattered across two files
 with no shared name or explanation. The other two (`as unknown as
 ComposedModuleBuilder`, `overrideBuilder as any`) are the genuinely irreducible
@@ -50,41 +50,39 @@ assertions plus the existing 173-test suite.
 `src/module-composition/composition.ts`, `makeBuilder` (lines ~54–97):
 
 ```ts
-  const addSync =
-    (lifetime: Lifetime) =>
-    (
-      entryName: ModuleEntryName,
-      provider: SyncModuleEntryProvider<ModuleName, ModuleEntries, typeof entryName>,
-      options?: SingletonDefinitionOptions<unknown>,
-    ) => {
-      moduleEntryDefinitions.register({
-        entryName: entryName,
-        lifetime: lifetime,
-        mode: TokenModes.Sync,
-        provider: provider as any,          // <-- cast 1
-        options: options,
-      });
-      return builder;
-    };
+const addSync =
+  (lifetime: Lifetime) =>
+  (
+    entryName: ModuleEntryName,
+    provider: SyncModuleEntryProvider<ModuleName, ModuleEntries, typeof entryName>,
+    options?: SingletonDefinitionOptions<unknown>,
+  ) => {
+    moduleEntryDefinitions.register({
+      entryName: entryName,
+      lifetime: lifetime,
+      mode: TokenModes.Sync,
+      provider: provider as any, // <-- cast 1
+      options: options,
+    });
+    return builder;
+  };
 
-  const addAsync =
-    (lifetime: Lifetime) =>
-    ( /* entryName, provider, options */ ) => {
-      moduleEntryDefinitions.register({
-        /* ... */
-        mode: TokenModes.Async,
-        provider: provider as any,          // <-- cast 2
-        options: options,
-      });
-      return builder;
-    };
-
-  // TODO: better typing
-  const builder = {
-    single: addSync(Lifetimes.Singleton),
-    /* ...singleAsync, factory, factoryAsync, scoped, scopedAsync... */
-  } as unknown as ComposedModuleBuilder<string, UsedModules, ModuleEntries>;  // <-- IRREDUCIBLE seam A
+const addAsync = (lifetime: Lifetime) => (/* entryName, provider, options */) => {
+  moduleEntryDefinitions.register({
+    /* ... */
+    mode: TokenModes.Async,
+    provider: provider as any, // <-- cast 2
+    options: options,
+  });
   return builder;
+};
+
+// TODO: better typing
+const builder = {
+  single: addSync(Lifetimes.Singleton),
+  /* ...singleAsync, factory, factoryAsync, scoped, scopedAsync... */
+} as unknown as ComposedModuleBuilder<string, UsedModules, ModuleEntries>; // <-- IRREDUCIBLE seam A
+return builder;
 ```
 
 ### Cast site 3, 4 & 5 — `build-module-overrides.ts`
@@ -92,26 +90,25 @@ assertions plus the existing 173-test suite.
 `src/module-composition/module-override/build-module-overrides.ts` (lines ~64–99):
 
 ```ts
-  const collectSyncReplacement = <EntryName extends ModuleEntryName>(
-    entryName: EntryName,
-    provider: SyncModuleEntryProvider<ModuleName, ModuleEntries, EntryName>,
-    options?: SingletonDefinitionOptions<unknown>,
-  ): OverrideBuilder<ModuleName, ModuleEntries> => {
-    const original = assertEntryCanBeReplaced(entryName, TokenModes.Sync, options);
-    replacementsByEntryName.set(entryName, { ...original, provider: provider as any, options });  // <-- cast 3
-    return overrideBuilder;
-  };
+const collectSyncReplacement = <EntryName extends ModuleEntryName>(
+  entryName: EntryName,
+  provider: SyncModuleEntryProvider<ModuleName, ModuleEntries, EntryName>,
+  options?: SingletonDefinitionOptions<unknown>,
+): OverrideBuilder<ModuleName, ModuleEntries> => {
+  const original = assertEntryCanBeReplaced(entryName, TokenModes.Sync, options);
+  replacementsByEntryName.set(entryName, { ...original, provider: provider as any, options }); // <-- cast 3
+  return overrideBuilder;
+};
 
-  const collectAsyncReplacement = <EntryName extends ModuleEntryName>(
-    /* entryName, provider, options */
-  ): OverrideBuilder<ModuleName, ModuleEntries> => {
-    const original = assertEntryCanBeReplaced(entryName, TokenModes.Async, options);
-    replacementsByEntryName.set(entryName, { ...original, provider: provider as any, options });  // <-- cast 4
-    return overrideBuilder;
-  };
+const collectAsyncReplacement = <EntryName extends ModuleEntryName>() /* entryName, provider, options */
+: OverrideBuilder<ModuleName, ModuleEntries> => {
+  const original = assertEntryCanBeReplaced(entryName, TokenModes.Async, options);
+  replacementsByEntryName.set(entryName, { ...original, provider: provider as any, options }); // <-- cast 4
+  return overrideBuilder;
+};
 
-  // TODO: refine this, have stricter types here on the overrideBuilder
-  defineOverride(overrideBuilder as any);   // <-- IRREDUCIBLE seam B
+// TODO: refine this, have stricter types here on the overrideBuilder
+defineOverride(overrideBuilder as any); // <-- IRREDUCIBLE seam B
 ```
 
 ### The erased target type
@@ -120,39 +117,47 @@ assertions plus the existing 173-test suite.
 provider field the four `provider as any` casts target):
 
 ```ts
-type ResolverNamespacesValue = Record<ComposedModuleName, unknown>;   // = Record<string, unknown>
+type ResolverNamespacesValue = Record<ComposedModuleName, unknown>; // = Record<string, unknown>
 
-type SyncProvision  = { mode: typeof TokenModes.Sync;  provider: (resolverNamespaces: ResolverNamespacesValue) => unknown };
-type AsyncProvision = { mode: typeof TokenModes.Async; provider: (resolverNamespaces: ResolverNamespacesValue) => Promise<unknown> };
+type SyncProvision = {
+  mode: typeof TokenModes.Sync;
+  provider: (resolverNamespaces: ResolverNamespacesValue) => unknown;
+};
+type AsyncProvision = {
+  mode: typeof TokenModes.Async;
+  provider: (resolverNamespaces: ResolverNamespacesValue) => Promise<unknown>;
+};
 ```
 
 So casts 1 & 3 erase a sync provider to `(rn: ResolverNamespacesValue) => unknown`;
 casts 2 & 4 erase an async provider to `(rn: ResolverNamespacesValue) => Promise<unknown>`.
 
-Convention (`STATUS.md`): *"Names do the narration; comments do the proofs."* The
+Convention (`STATUS.md`): _"Names do the narration; comments do the proofs."_ The
 helper's name narrates the erasure; its doc comment proves why it is safe (the
 type tests).
 
 ## Commands you will need
 
-| Purpose                  | Command                                                    | Expected on success           |
-|--------------------------|------------------------------------------------------------|-------------------------------|
-| Typecheck src            | `bun run typecheck`                                       | exit 0, no errors             |
-| Typecheck tests + types  | `bun run typecheck:test`                                  | exit 0 (plan 004 net intact)  |
-| Run suite                | `bun run test`                                            | 173 tests pass                |
-| Full gate                | `bun run quality`                                         | exit 0                        |
-| Count remaining casts    | `grep -rn 'as any\|as unknown as' src/module-composition` | 2 matches after this plan     |
+| Purpose                 | Command                                                   | Expected on success          |
+| ----------------------- | --------------------------------------------------------- | ---------------------------- |
+| Typecheck src           | `bun run typecheck`                                       | exit 0, no errors            |
+| Typecheck tests + types | `bun run typecheck:test`                                  | exit 0 (plan 004 net intact) |
+| Run suite               | `bun run test`                                            | 173 tests pass               |
+| Full gate               | `bun run quality`                                         | exit 0                       |
+| Count remaining casts   | `grep -rn 'as any\|as unknown as' src/module-composition` | 2 matches after this plan    |
 
 ## Scope
 
 **In scope** (the only files you modify):
+
 - `src/module-composition/module-entry-definitions.ts` (add the erase helper(s))
 - `src/module-composition/composition.ts` (use the helper; document seam A)
 - `src/module-composition/module-override/build-module-overrides.ts` (use the helper; document seam B)
 
 **Out of scope** (do NOT touch):
+
 - The two irreducible casts themselves — `composition.ts` `as unknown as
-  ComposedModuleBuilder` and `build-module-overrides.ts` `overrideBuilder as any`.
+ComposedModuleBuilder` and `build-module-overrides.ts` `overrideBuilder as any`.
   Do NOT attempt to remove them; only replace their `// TODO` comments with the
   documented-seam comment in Step 3. Trying to "fix" them means restructuring the
   generic fluent-builder types — high risk, separate effort, not this plan.
@@ -197,6 +202,7 @@ export function eraseAsyncEntryProvider(
 ```
 
 Notes:
+
 - The parameter type uses `never`, not `any` — every provider function is
   assignable to `(resolver: never) => unknown`, so call sites stay cast-free
   without introducing an `any` parameter.
@@ -223,6 +229,7 @@ There must be **no `as any` and no `as` at these four call sites** after the
 change — the assertion now lives only inside the helper.
 
 **Verify**:
+
 - `bun run typecheck` → exit 0.
 - `grep -rn 'provider as any' src/module-composition` → no matches.
 
@@ -231,7 +238,7 @@ change — the assertion now lives only inside the helper.
 Replace the vague TODO comments with an explanation (do NOT change the casts):
 
 - In `composition.ts`, replace `// TODO: better typing` (just above the `const
-  builder = { ... } as unknown as ComposedModuleBuilder<...>`) with:
+builder = { ... } as unknown as ComposedModuleBuilder<...>`) with:
   ```ts
   // Phantom-builder seam: a single runtime object cannot carry the type of a
   // fluent interface whose every method returns a type with one more entry
@@ -239,8 +246,8 @@ Replace the vague TODO comments with an explanation (do NOT change the casts):
   // pinned by test/runs/types.test.ts.
   ```
 - In `build-module-overrides.ts`, replace `// TODO: refine this, have stricter
-  types here on the overrideBuilder` (just above `defineOverride(overrideBuilder
-  as any);`) with:
+types here on the overrideBuilder` (just above `defineOverride(overrideBuilder
+as any);`) with:
   ```ts
   // Phantom-builder seam: overrideBuilder's runtime methods use looser generics
   // than the OverrideBuilder interface's entry-name constraints, so the object
@@ -256,6 +263,7 @@ no longer lists these two lines.
 The whole point is zero behavioral and zero public-type change.
 
 **Verify** (all must pass):
+
 - `bun run typecheck` → exit 0.
 - `bun run typecheck:test` → exit 0. **This is the load-bearing check**: plan
   004's positive assertions in `test/runs/types.test.ts` must still hold, proving
@@ -271,6 +279,7 @@ The whole point is zero behavioral and zero public-type change.
 ## Test plan
 
 No new tests. Verification is entirely existing gates + plan 004's assertions:
+
 - `bun run typecheck:test` proves the public types are unchanged (004's net).
 - `bun run test` proves runtime behavior is unchanged (173 tests).
 - The `grep` count proves the four provider casts were collapsed and only the two
@@ -309,6 +318,7 @@ Stop and report back (do not improvise) if:
 ## Maintenance notes
 
 For whoever owns this next:
+
 - This is auditability, not a behavior change. A reviewer should confirm
   `bun run test` is still 173 green and that plan 004's type assertions still pass
   — together those prove nothing observable changed.

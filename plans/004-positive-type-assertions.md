@@ -23,7 +23,7 @@
 
 ## Why this matters
 
-The public API's typed contract is enforced today only in the *negative*: there
+The public API's typed contract is enforced today only in the _negative_: there
 are 31 `@ts-expect-error` tests asserting that wrong usage fails to compile
 (sync providers can't see async entries, PascalCase enforcement, override
 name/mode checks, forward-reference bans, etc.). There are **zero positive type
@@ -46,10 +46,10 @@ How type-level testing works in this repo (read before writing tests):
   files. Examples live in `test/runs/module-composition.test.ts` (lines ~225,
   332, 477–527) and `test/runs/accessors.test.ts` (lines ~113–115).
 - Those files are typechecked by `bun run typecheck:test` (`tsc -p
-  tsconfig.test.json`, which `include`s `["src", "test"]`). That command is part
+tsconfig.test.json`, which `include`s `["src", "test"]`). That command is part
   of the `quality` gate. **This is the enforcement path for type assertions.**
-- **Crucial gotcha**: `expectTypeOf(...).toEqualTypeOf<...>()` is a *no-op at
-  runtime*. `vitest run` (a.k.a. `bun run test`) does **not** typecheck it and
+- **Crucial gotcha**: `expectTypeOf(...).toEqualTypeOf<...>()` is a _no-op at
+  runtime_. `vitest run` (a.k.a. `bun run test`) does **not** typecheck it and
   will report it as passing even when the types are wrong. A failing
   `expectTypeOf` assertion only surfaces as a **`tsc` error** under
   `bun run typecheck:test`. Verify these tests with `typecheck:test`, never with
@@ -67,6 +67,7 @@ import { createContainer, createModule } from "../../src";
 
 Accessor typing rules to assert (from `src/module-composition/types.ts` and
 `src/accessors.ts`):
+
 - A **sync** entry `name` becomes accessor `() => T`.
 - An **async** entry `name` becomes accessor `() => Promise<T>`.
 - A provider's resolver exposes imported modules under their names
@@ -81,18 +82,20 @@ object literal providers).
 
 ## Commands you will need
 
-| Purpose                       | Command                       | Expected on success                         |
-|-------------------------------|-------------------------------|---------------------------------------------|
-| Typecheck the type assertions | `bun run typecheck:test`     | exit 0, no errors (THIS enforces the tests) |
-| Run the suite (no-op for types)| `bun run test`               | all tests pass, including the new file      |
-| Full gate                     | `bun run quality`            | exit 0                                       |
+| Purpose                         | Command                  | Expected on success                         |
+| ------------------------------- | ------------------------ | ------------------------------------------- |
+| Typecheck the type assertions   | `bun run typecheck:test` | exit 0, no errors (THIS enforces the tests) |
+| Run the suite (no-op for types) | `bun run test`           | all tests pass, including the new file      |
+| Full gate                       | `bun run quality`        | exit 0                                      |
 
 ## Scope
 
 **In scope** (the only file you create):
+
 - `test/runs/types.test.ts` (create)
 
 **Out of scope** (do NOT modify):
+
 - Any file under `src/` — this plan adds tests that observe the existing types;
   it must not change them. If an assertion does not hold, that is a finding to
   report (STOP), not a reason to edit `src/`.
@@ -127,9 +130,7 @@ interface UserRepo {
 describe("public type contract (positive assertions)", () => {
   it("container accessors have exact sync/async return types — no any-leak", () => {
     const Infra = createModule("Infra", (m) =>
-      m
-        .single("logger", (): Logger => ({ info() {} }))
-        .singleAsync("config", async () => ({ env: "prod" as const })),
+      m.single("logger", (): Logger => ({ info() {} })).singleAsync("config", async () => ({ env: "prod" as const })),
     );
     const app = createContainer(Infra);
 
@@ -170,14 +171,10 @@ describe("public type contract (positive assertions)", () => {
 
   it("override .with/.withAsync infer the original entry's value type", () => {
     const Infra = createModule("Infra", (m) =>
-      m
-        .single("logger", (): Logger => ({ info() {} }))
-        .singleAsync("config", async () => ({ env: "prod" as const })),
+      m.single("logger", (): Logger => ({ info() {} })).singleAsync("config", async () => ({ env: "prod" as const })),
     );
     Infra.override((o) =>
-      o
-        .with("logger", (): Logger => ({ info() {} }))
-        .withAsync("config", async () => ({ env: "prod" as const })),
+      o.with("logger", (): Logger => ({ info() {} })).withAsync("config", async () => ({ env: "prod" as const })),
     );
     // The provider return types above must satisfy the original entry types;
     // a wrong return type here would be a tsc error caught by typecheck:test.
@@ -195,7 +192,7 @@ point.
 
 ### Step 2: Prove the net actually bites
 
-A green typecheck is only meaningful if a *wrong* assertion would fail. Prove it:
+A green typecheck is only meaningful if a _wrong_ assertion would fail. Prove it:
 
 1. Temporarily change one assertion to a type you know is wrong, e.g.
    `expectTypeOf(app.Infra.logger()).toEqualTypeOf<number>();`.
@@ -211,6 +208,7 @@ it passes.
 ### Step 3: Confirm the full gate is green
 
 **Verify**:
+
 - `bun run test` → all pass, including `test/runs/types.test.ts` (the new `it`
   blocks appear and pass — runtime no-ops).
 - `bun run quality` → exit 0 (lint, format, typecheck, typecheck:test with the new
@@ -254,6 +252,7 @@ Stop and report back (do not improvise) if:
 ## Maintenance notes
 
 For whoever owns this next:
+
 - These assertions are the safety net for **plan 005** (collapsing the builder
   casts). Land this first; 005 relies on it to catch any type regression the
   refactor introduces.

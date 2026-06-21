@@ -90,19 +90,21 @@ node bench/module-composition-type-bench.mjs
 
 ## Commands you will need
 
-| Purpose                   | Command                                            | Expected on success                       |
-|---------------------------|----------------------------------------------------|-------------------------------------------|
-| Confirm no bench in repo  | `git ls-files | grep -i bench`                     | no output (exit 1 from grep)              |
-| Confirm bench refs gone   | `grep -rn "bench" STATUS.md`                       | no output after Step 1                    |
-| Confirm ignore works      | `git check-ignore skills-lock.json`                | prints `skills-lock.json` after Step 2    |
+| Purpose                  | Command                             | Expected on success                    |
+| ------------------------ | ----------------------------------- | -------------------------------------- | ---------------------------- |
+| Confirm no bench in repo | `git ls-files                       | grep -i bench`                         | no output (exit 1 from grep) |
+| Confirm bench refs gone  | `grep -rn "bench" STATUS.md`        | no output after Step 1                 |
+| Confirm ignore works     | `git check-ignore skills-lock.json` | prints `skills-lock.json` after Step 2 |
 
 ## Scope
 
 **In scope** (the only files you should modify):
+
 - `STATUS.md`
 - `.gitignore`
 
 **Out of scope** (do NOT touch):
+
 - Do NOT create a `bench/` directory or write a benchmark script. The script is
   gone and recreating a type-level benchmark requires maintainer intent; this plan
   only removes the dangling references.
@@ -125,9 +127,11 @@ node bench/module-composition-type-bench.mjs
 ### Step 1: Remove the two dead `bench/` references in `STATUS.md`
 
 1. In the "Engineering infrastructure" list, delete the entire bullet line:
+
    ```
    - Benchmark: `bench/module-composition-type-bench.mjs`.
    ```
+
    Leave the surrounding bullets (Fuzzers, Coverage gates) intact.
 
 2. In the "Verification quickstart" `sh` code block, delete the line:
@@ -154,6 +158,7 @@ Append a new line to `.gitignore` after the `/.claude/` line:
 (Add `/skills-lock.json` as a new final line; ensure the file ends with a newline.)
 
 **Verify**:
+
 - `git check-ignore skills-lock.json` → prints `skills-lock.json`.
 - `git status --short` → no longer lists `skills-lock.json` as untracked.
 
@@ -189,6 +194,7 @@ Stop and report back (do not improvise) if:
 ## Maintenance notes
 
 For whoever owns this next:
+
 - **`skills-lock.json` decision is reversible.** The default here is to ignore it
   (consistent with the ignored skill directories). If the team instead wants
   reproducible skill installs across machines, commit `skills-lock.json` and remove

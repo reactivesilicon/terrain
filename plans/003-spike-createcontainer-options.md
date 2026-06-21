@@ -32,8 +32,8 @@ no options, so **`onDisposeError` is unreachable through the public API entirely
 those orphan-disposal errors are silently swallowed with no way for an application
 to observe them. `STATUS.md` lists `createContainer(options, ...parts)` as the
 natural future shape. Because this changes the public API surface, the repo's
-convention (per `STATUS.md` "Conventions to uphold": *discuss design/naming before
-code when the change affects public API shape*) is to design it first. This spike
+convention (per `STATUS.md` "Conventions to uphold": _discuss design/naming before
+code when the change affects public API shape_) is to design it first. This spike
 produces that design so a follow-up implementation plan can be written with the
 shape already decided.
 
@@ -64,7 +64,7 @@ export function createContainer<const Parts extends readonly ContainerPart[]>(..
   }
   const wiring = wiringOf(exposed);
   // ...override-target validation...
-  const container = new Container();              // <-- no options passed
+  const container = new Container(); // <-- no options passed
   for (const wiringModule of wiring) container.load(wiringModule.kernelModule);
   for (const override of overrides) container.load(buildOverrideKernelModule(override), { override: true });
   return buildContainerView<Parts>(container, exposed);
@@ -108,6 +108,7 @@ notifyDisposeError(error: unknown): void {                // line 401-407
 ```
 
 Part classification is brand-based, not structural (`module-internals.ts`):
+
 - `findOverrideInternals(x)` → `OverrideInternals | undefined` (looks `x` up in a
   `WeakMap` keyed by override identity).
 - `requireModuleInternals(x)` → throws `ForeignModuleError` if `x` is not a module
@@ -118,6 +119,7 @@ a registered override; passed where a part is expected today it would throw
 `ForeignModuleError`. This matters for runtime detection (Step 3).
 
 The typed entry tuple (`src/module-composition/types.ts`):
+
 - `ContainerPart = ComposedModule<...> | ModuleOverride<...>` (line 187), both
   branded interfaces.
 - `createContainer<const Parts extends readonly ContainerPart[]>(...)` uses the
@@ -125,24 +127,26 @@ The typed entry tuple (`src/module-composition/types.ts`):
   `Namespaces<Parts>` / `ContainerView<Parts>`. Any new overload must preserve this
   inference, or namespace exposure breaks.
 
-Convention to honor (inline from `STATUS.md`): *"Discuss design/naming before code
-when the change affects public API shape"* and *"Prefer compile-time enforcement
-with runtime backstops for untyped callers."* The design must respect both.
+Convention to honor (inline from `STATUS.md`): _"Discuss design/naming before code
+when the change affects public API shape"_ and _"Prefer compile-time enforcement
+with runtime backstops for untyped callers."_ The design must respect both.
 
 ## Commands you will need
 
-| Purpose                    | Command                                   | Expected                         |
-|----------------------------|-------------------------------------------|----------------------------------|
-| Read the cited source      | (open the files listed above)             | —                                |
-| Optional typing experiment | `bunx tsc --noEmit <scratch file in /tmp>`| your experiment compiles or not  |
-| Confirm no src changes     | `git status --short src/`                 | no output at the end             |
+| Purpose                    | Command                                    | Expected                        |
+| -------------------------- | ------------------------------------------ | ------------------------------- |
+| Read the cited source      | (open the files listed above)              | —                               |
+| Optional typing experiment | `bunx tsc --noEmit <scratch file in /tmp>` | your experiment compiles or not |
+| Confirm no src changes     | `git status --short src/`                  | no output at the end            |
 
 ## Scope
 
 **In scope** (the only file you create):
+
 - `plans/003-createcontainer-options-design.md` (the design write-up — create it).
 
 **Out of scope** (do NOT modify):
+
 - Anything under `src/`, `test/`, `examples/`. This spike writes a design, not code.
 - Do not change `package.json`, configs, or CI.
 - If you build a TypeScript experiment to validate a typing approach, put it under
@@ -173,9 +177,9 @@ account for (composition root with no args; `createScope` with `this.options`).
 Draft at least these three shapes, each with a short code sketch and pros/cons:
 
 A. **Leading-options overload** — `createContainer(options, ...parts)` plus the
-   existing `createContainer(...parts)`. Closest to what `STATUS.md` suggests.
+existing `createContainer(...parts)`. Closest to what `STATUS.md` suggests.
 B. **Trailing builder** — `createContainer(...parts).withOptions(options)` or an
-   options-accepting method on the returned view before first use.
+options-accepting method on the returned view before first use.
 C. **Single config object** — `createContainer({ parts: [...], options })`.
 
 For each, note impact on the `const Parts` tuple inference (Step 4) and on
@@ -185,6 +189,7 @@ backward compatibility (the existing rest call must keep working unchanged).
 
 For shape A, the runtime must distinguish a leading options object from a part.
 Document the options and their risks:
+
 - **Brand the options** (e.g. require callers to pass a `containerOptions({...})`
   wrapper that sets a private brand) — unambiguous, but adds API surface.
 - **Structural sniff** — treat `parts[0]` as options if it is neither a registered
@@ -193,7 +198,7 @@ Document the options and their risks:
   that is also a plain object could be misclassified; and a user typo (passing a
   non-module object intending it as a part) would be silently read as options
   instead of throwing `ForeignModuleError`.
-Recommend one and say why, consistent with *"runtime backstops for untyped callers"*.
+  Recommend one and say why, consistent with _"runtime backstops for untyped callers"_.
 
 ### Step 4: Validate the type-level behavior
 
@@ -203,6 +208,7 @@ readonly ContainerPart[]` inference still produces the exact tuple that
 recommended shape, build a minimal scratch experiment under `/tmp` (a `.ts` file
 that imports from this repo's `src` via absolute path, or copies the relevant
 signatures) and confirm:
+
 - the existing `createContainer(ModuleA, ModuleB)` still infers namespaces `A` & `B`;
 - the new options form still infers the same namespaces;
 - overload resolution is unambiguous when the first part is a module, when it is an
@@ -279,6 +285,7 @@ Stop and report back (do not improvise) if:
 ## Maintenance notes
 
 For whoever owns this next:
+
 - This spike unblocks an implementation plan; it deliberately produces no code so
   the public-API shape can be reviewed first (repo convention).
 - The narrow semantics of `onDisposeError` (orphan-disposal only) are easy to

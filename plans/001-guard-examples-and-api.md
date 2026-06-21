@@ -54,10 +54,10 @@ Files involved:
     "module": "ESNext",
     "moduleResolution": "bundler",
     // ...strict family, exactOptionalPropertyTypes, noUncheckedIndexedAccess...
-    "types": []
+    "types": [],
   },
   "include": ["src"],
-  "exclude": ["dist", "node_modules", "examples", "test"]
+  "exclude": ["dist", "node_modules", "examples", "test"],
 }
 ```
 
@@ -75,14 +75,15 @@ Files involved:
 `.github/workflows/ci.yml` (the two run steps at the end):
 
 ```yaml
-      - name: Quality gate
-        run: bun run quality
+- name: Quality gate
+  run: bun run quality
 
-      - name: Build
-        run: bun run build
+- name: Build
+  run: bun run build
 ```
 
 Repo conventions to match:
+
 - Package manager is **bun** (`packageManager: bun@1.3.14`); scripts call sibling
   scripts as `bun run <name>`. Match that style.
 - Typecheck scripts are `tsc -p <config>`; configs live at repo root.
@@ -97,23 +98,25 @@ reports `TS18003: No inputs were found`. The shape in Step 1 already does this.
 
 ## Commands you will need
 
-| Purpose             | Command                          | Expected on success            |
-|---------------------|----------------------------------|--------------------------------|
-| Install             | `bun install --frozen-lockfile`  | exit 0                         |
-| Typecheck src       | `bun run typecheck`              | exit 0, no errors              |
-| Typecheck examples  | `bun run typecheck:examples`    | exit 0, no errors (after Step 2) |
-| Full gate           | `bun run quality`               | exit 0, all pass               |
-| Run public example  | `bun examples/public-api-usage.ts` | prints output, exit 0       |
-| Run engine example  | `bun examples/engine.ts`        | prints output, exit 0          |
+| Purpose            | Command                            | Expected on success              |
+| ------------------ | ---------------------------------- | -------------------------------- |
+| Install            | `bun install --frozen-lockfile`    | exit 0                           |
+| Typecheck src      | `bun run typecheck`                | exit 0, no errors                |
+| Typecheck examples | `bun run typecheck:examples`       | exit 0, no errors (after Step 2) |
+| Full gate          | `bun run quality`                  | exit 0, all pass                 |
+| Run public example | `bun examples/public-api-usage.ts` | prints output, exit 0            |
+| Run engine example | `bun examples/engine.ts`           | prints output, exit 0            |
 
 ## Scope
 
 **In scope** (the only files you should create or modify):
+
 - `tsconfig.examples.json` (create)
 - `package.json` (add one script; extend two existing scripts)
 - `.github/workflows/ci.yml` (add one CI step)
 
 **Out of scope** (do NOT touch):
+
 - `tsconfig.json` / `tsconfig.test.json` — do not change their `include`/`exclude`;
   the examples get their own config so the source and test typechecks stay exactly
   as they are.
@@ -141,14 +144,15 @@ Create `tsconfig.examples.json` at the repo root with exactly this content:
   "compilerOptions": {
     "types": ["node"],
     "noUnusedLocals": false,
-    "noUnusedParameters": false
+    "noUnusedParameters": false,
   },
   "include": ["src", "examples"],
-  "exclude": ["dist", "node_modules", "test"]
+  "exclude": ["dist", "node_modules", "test"],
 }
 ```
 
 Why each line:
+
 - `types: ["node"]` — examples use `console`/`setTimeout`/`process`.
 - `noUnusedLocals/Parameters: false` — examples intentionally show unused bindings
   (e.g. ignored callback args); mirrors how `tsconfig.test.json` relaxes these.
@@ -174,19 +178,25 @@ Then change the `quality` and `quality:fix` scripts to run it after
 `typecheck:test`. The exact replacements:
 
 `quality` — from:
+
 ```
 "quality": "bun run lint && bun run format && bun run typecheck && bun run typecheck:test && bun run test:coverage",
 ```
+
 to:
+
 ```
 "quality": "bun run lint && bun run format && bun run typecheck && bun run typecheck:test && bun run typecheck:examples && bun run test:coverage",
 ```
 
 `quality:fix` — from:
+
 ```
 "quality:fix": "bun run lint:fix && bun run format:fix && bun run typecheck && bun run typecheck:test && bun run test:coverage",
 ```
+
 to:
+
 ```
 "quality:fix": "bun run lint:fix && bun run format:fix && bun run typecheck && bun run typecheck:test && bun run typecheck:examples && bun run test:coverage",
 ```
@@ -195,6 +205,7 @@ Do not touch `prepublishOnly` — it calls `bun run quality`, so it inherits the
 check automatically.
 
 **Verify**:
+
 - `bun run typecheck:examples` → exit 0, no errors.
 - `bun run quality` → exit 0, the whole gate passes (lint, format, both
   typechecks, examples typecheck, coverage-gated tests).
@@ -209,15 +220,16 @@ script so local runs stay quiet — CI is where runtime validation belongs.
 Add, as the final step of the `quality` job (after `Build`):
 
 ```yaml
-      - name: Run examples
-        run: |
-          bun examples/public-api-usage.ts
-          bun examples/engine.ts
+- name: Run examples
+  run: |
+    bun examples/public-api-usage.ts
+    bun examples/engine.ts
 ```
 
 Match the existing two-space step indentation in that file.
 
 **Verify** (locally, simulating the CI step):
+
 - `bun examples/public-api-usage.ts` → prints `user: Ada`, `use case: Found Ada`,
   `config: { env: "prod" }`, scope/fake-logger lines; exit 0.
 - `bun examples/engine.ts` → prints `=== ... ===` section banners and demo lines;
@@ -264,11 +276,12 @@ Stop and report back (do not improvise) if:
 ## Maintenance notes
 
 For whoever owns this next:
+
 - When the public API changes, the examples typecheck (now in `quality` and
   `prepublishOnly`) will fail until the examples are updated — that is the point.
   Keep `examples/public-api-usage.ts` aligned with the README quick-start.
 - If a third example is added, it is covered automatically (the config globs
-  `examples/`). If an example is meant to *demonstrate a type error*, it cannot
+  `examples/`). If an example is meant to _demonstrate a type error_, it cannot
   live here — it would break the typecheck.
 - Reviewer should confirm `quality` still passes and that no `src/`/`examples/`
   files were modified (this plan is gate-only).
