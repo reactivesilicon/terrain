@@ -100,8 +100,9 @@ const collectSyncReplacement = <EntryName extends ModuleEntryName>(
   return overrideBuilder;
 };
 
-const collectAsyncReplacement = <EntryName extends ModuleEntryName>() /* entryName, provider, options */
-: OverrideBuilder<ModuleName, ModuleEntries> => {
+const collectAsyncReplacement = <
+  EntryName extends ModuleEntryName,
+> /* entryName, provider, options */(): OverrideBuilder<ModuleName, ModuleEntries> => {
   const original = assertEntryCanBeReplaced(entryName, TokenModes.Async, options);
   replacementsByEntryName.set(entryName, { ...original, provider: provider as any, options }); // <-- cast 4
   return overrideBuilder;
