@@ -15,9 +15,10 @@ selected work is DX hardening, documentation accuracy, and one design spike.
 | ---- | ---------------------------------------------------------- | -------- | ------ | ---------- | ------ |
 | 001  | Guard examples + public API in the quality gate and CI     | P1       | S      | —          | DONE   |
 | 002  | Fix STATUS.md `bench/` drift and decide `skills-lock.json` | P2       | S      | —          | DONE   |
-| 003  | Spike: `createContainer(options, ...parts)` design         | P3       | S      | —          | TODO   |
+| 003  | Spike: `createContainer(options, ...parts)` design         | P3       | S      | —          | DONE   |
 | 004  | Pin the public type contract with positive `expectTypeOf`  | P2       | M      | —          | DONE   |
 | 005  | Contain the composition-builder casts into named seams     | P3       | M      | 004        | DONE   |
+| 006  | Implement `createContainer({ options, parts })` (breaking)  | P2       | M      | 003        | TODO   |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -27,6 +28,14 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **005 depends on 004**: the positive `expectTypeOf` assertions (004) are the
   characterization safety net that catches any public-type regression the
   cast-containment refactor (005) might introduce. Land 004 first.
+- **006 implements 003**: the design spike (003) chose the config-object form
+  `createContainer({ options, parts })`. Maintainer accepted it as a breaking
+  change shipping in 1.2.0 (config-object is the sole form; the variadic is
+  removed). 006's migration is fenced by the 001 examples gate and 004 type net,
+  so land those first (both DONE).
+
+> 003's design output was produced on branch `advisor/003-spike-container-options`;
+> its decision is inlined verbatim in plan 006 so 006 is self-contained.
 
 ## Findings considered and rejected (do not re-audit)
 
