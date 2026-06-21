@@ -51,3 +51,4 @@ type IdentifierName<Name extends string> = string extends Name
     : never;
 
 export type PublicModuleName<Name extends string> = Name extends ReservedModuleName ? never : IdentifierName<Name>;
+export type PublicModuleEntryName<Name extends string> = IdentifierName<Name>;

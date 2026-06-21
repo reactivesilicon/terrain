@@ -127,4 +127,39 @@ describe("public type contract (positive assertions)", () => {
       createModule("", (m) => m.single("x", () => 1));
     };
   });
+
+  it("entry names: valid identifiers accepted, invalid literal names rejected", () => {
+    const Entries = createModule("Entries", (m) =>
+      m
+        .single("logger2", (): Logger => ({ info() {} }))
+        .single("$logger", (): Logger => ({ info() {} }))
+        .single("_logger", (): Logger => ({ info() {} })),
+    );
+    const app = createContainer({ parts: [Entries] });
+
+    expectTypeOf(app.Entries.logger2()).toEqualTypeOf<Logger>();
+    expectTypeOf(app.Entries.logger2()).not.toBeAny();
+    expectTypeOf(app.Entries.$logger()).toEqualTypeOf<Logger>();
+    expectTypeOf(app.Entries.$logger()).not.toBeAny();
+    expectTypeOf(app.Entries._logger()).toEqualTypeOf<Logger>();
+    expectTypeOf(app.Entries._logger()).not.toBeAny();
+
+    void function compileOnly() {
+      createModule("BadEntries", (m) => {
+        // @ts-expect-error spaces are not valid entry identifiers
+        m.single("user repo", () => 1);
+        // @ts-expect-error entry names cannot start with a digit
+        m.singleAsync("2repo", async () => 1);
+        // @ts-expect-error hyphen is not valid in entry identifiers
+        m.factory("user-repo", () => 1);
+        // @ts-expect-error dot is not valid in entry identifiers
+        m.factoryAsync("user.repo", async () => 1);
+        // @ts-expect-error empty string is not a valid entry identifier
+        m.scoped("", () => 1);
+        // @ts-expect-error spaces are not valid entry identifiers
+        m.scopedAsync("user repo", async () => 1);
+        return m;
+      });
+    };
+  });
 });
