@@ -73,6 +73,8 @@ Release positioning — everything in v1.1.0, plus:
 - Container options via `createContainer({ options, parts })` (exposes `onDisposeError`; scopes inherit).
 - Null-prototype accessor/namespace/view hardening (fixes entry-name collisions like `source`/`toString`).
 - Relaxed module naming (any identifier except `scope`/`start`/`dispose`), with compile-time identifier guards for module and entry names.
+- Concurrent async-cycle detection (hardening raw engine surface): a mutual async cycle resolved by concurrent `getAsync` calls used to deadlock, because coalescing joins an in-flight promise without extending the resolution chain the per-chain circular check inspects. A root-level dependency graph (`WaitForGraph`) now tracks in-flight provider dependencies — every `resolver.getAsync(T)` from inside a provider, whether built or coalesced — and throws `CircularDependencyError` on the request that would close a cycle, instead of hanging.
+  - **Conservative by contract**: the engine treats `resolver.getAsync(T)` inside a provider as _dependency acquisition_, whether or not you await the returned promise. It does not (cannot) observe JavaScript await timing, so this is in-flight dependency tracking, not "live await" detection. Consequence: fire-and-forget `void resolver.getAsync(X)` or a `Promise.race` over resolutions inside a provider that forms a cycle is reported as circular even though it might not deadlock at runtime. This is intentional — a DI container reasons about the dependency graph. (Cycles are unwritable through the composition API regardless; this only affects raw-engine deep-import use.)
 
 Release checks run locally:
 
@@ -86,8 +88,8 @@ npm view terrain-di version
 Observed results (latest run on this branch):
 
 - `bun run quality`: passed.
-- Tests: **184 passed** across **17 files** with coverage gates met.
-- Coverage summary: statements 100%, branches 99.15%, functions 100%, lines 100%.
+- Tests: **199 passed** across **18 files** with coverage gates met.
+- Coverage summary: statements 100%, branches 99.24%, functions 100%, lines 100%.
 - `bun run build`: passed; generates `dist/index.js` and `dist/index.d.ts`.
 
 Before publishing:
@@ -112,7 +114,7 @@ These are not current release blockers unless the maintainer decides otherwise:
 - **Module unload/hot-swap at the composition layer**: currently out of scope; `createContainer` is static composition.
 - **Module-name aliasing**: only likely to matter if a third-party module ecosystem emerges.
 - **Optional resolution**: no `getOrNull`-style API.
-- **Engine wait-for graph**: the v1 coalesced async cycle deadlock remains an engine-level future item, but the composition layer's typed API makes those cycles unwritable in normal use.
+- **Engine wait-for graph**: ~~the v1 coalesced async cycle deadlock remains an engine-level future item~~ — **resolved in 1.2.0** (see release notes): a root-level dependency graph turns the concurrent async cycle into a thrown `CircularDependencyError` instead of a hang. It is conservative by contract — `resolver.getAsync(T)` inside a provider counts as a dependency on T whether or not awaited — so it can reject fire-and-forget/`Promise.race` provider patterns. The composition layer's typed API makes those cycles unwritable in normal use; the graph hardens the raw engine surface.
 - **Zero-cast accessor typing**: the composition builder still has two documented type-erasure seams (the phantom-builder casts); full zero-cast typing is a possible future cleanup.
 - **Broader disposal-error hook**: `onDisposeError` observes orphaned in-flight disposal only; a hook that also observes normal `dispose()`/`unload()` failures was considered and deferred.
 

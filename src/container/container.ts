@@ -35,13 +35,14 @@ import { DependencyGraph } from "./dependency-graph";
 import { DisposableRegistry } from "./disposable-registry";
 import { InstanceKinds, ResolutionCache } from "./resolution-cache";
 import type { ResolutionHost } from "./resolution-host";
+import { WaitForGraph, type WaitForGraphHost } from "./wait-for-graph";
 
 interface ResolvedDefinition<T> {
   definition: Definition<T>;
   owner: Container;
 }
 
-export class Container implements ResolutionHost {
+export class Container implements ResolutionHost, WaitForGraphHost {
   private parent?: Container;
   private readonly options: ContainerOptions;
 
@@ -67,6 +68,13 @@ export class Container implements ResolutionHost {
 
   // Like the lifecycle flag: every node carries one, only the ROOT's is used.
   private readonly dependencyGraph = new DependencyGraph();
+
+  /**
+   * Cross-call dependency graph for in-flight cached async resolutions. Like the others: carried on every node,
+   * consulted only on the ROOT, so one graph covers the whole tree.
+   * Keyed by resolution-frame identity (frames are unique per resolution and span containers), not by token or container.
+   * */
+  private readonly waitForGraph = new WaitForGraph();
 
   constructor(options: ContainerOptions = {}) {
     this.options = options;
@@ -511,6 +519,17 @@ export class Container implements ResolutionHost {
   private purgeDependencyEdges(token: AnyToken<any>): void {
     this.root().dependencyGraph.purge(token);
   }
+
+  // region WaitForGraphHost (async resolution deadlock detection)
+
+  recordWaitOrThrow(waiter: ResolutionFrame, target: ResolutionFrame): void {
+    this.root().waitForGraph.recordWaitOrThrow(waiter, target);
+  }
+
+  removeWait(waiter: ResolutionFrame, target: ResolutionFrame): void {
+    this.root().waitForGraph.removeWait(waiter, target);
+  }
+  // endregion
 
   private checkCircularDependency(token: AnyToken<any>, chain: ResolutionFrame[]): void {
     if (chain.some((frame) => frame.token === token)) {

@@ -1,6 +1,6 @@
 import { DisposedContainerError } from "../errors";
 import type { AnyToken, AsyncToken, Token } from "../token";
-import type { AsyncDefinition, Disposer, ResolutionFrame } from "../types";
+import { type AsyncDefinition, type Disposer, Lifetimes, type ResolutionFrame } from "../types";
 import type { ResolutionHost } from "./resolution-host";
 
 export const InstanceKinds = {
@@ -20,6 +20,10 @@ export class ResolutionCache {
   private singletonResolutionPromises = new Map<AnyToken<any>, Promise<any>>();
   private scopedResolutionPromises = new Map<AnyToken<any>, Promise<any>>();
   private factoryResolutionPromises = new Map<AnyToken<any>, Set<Promise<any>>>();
+
+  // get(promise) -> frame used as that in-flight resolution's graph node.
+  // Coalescers only have the promise; WeakMap cleanup is tied to promise reachability.
+  private resolutionFrameByPromise = new WeakMap<Promise<unknown>, ResolutionFrame>();
 
   constructor(private readonly host: ResolutionHost) {}
 
@@ -49,7 +53,18 @@ export class ResolutionCache {
 
     if (instances.has(token)) return instances.get(token);
     const pendingTokenResolutionPromise = resolutionPromises.get(token);
-    if (pendingTokenResolutionPromise) return pendingTokenResolutionPromise;
+    if (pendingTokenResolutionPromise) {
+      // Coalescing does not extend the chain, so record the cross-call dependency edge here.
+      this.recordCoalescedWaitOrThrow(chain, pendingTokenResolutionPromise);
+      return pendingTokenResolutionPromise;
+    }
+
+    // The build edge must be visible before provider invocation: a synchronous
+    // descendant can immediately coalesce back up. The frame, unlike the promise,
+    // already exists and is this resolution's graph node.
+    const ownFrame = chain[chain.length - 1]!;
+    const buildWaiter = ResolutionCache.nearestCachedWaiter(chain);
+    if (buildWaiter) this.host.recordWaitOrThrow(buildWaiter, ownFrame);
 
     let promise: Promise<T>;
     promise = this.guard({
@@ -58,6 +73,8 @@ export class ResolutionCache {
       isStale: () => resolutionPromises.get(token) !== promise,
       dispose: definition.dispose,
     });
+    this.resolutionFrameByPromise.set(promise, ownFrame);
+    if (buildWaiter) this.scheduleWaitRemoval(buildWaiter, ownFrame, promise);
     resolutionPromises.set(token, promise);
 
     const settledResolution = await promise.then(
@@ -75,6 +92,40 @@ export class ResolutionCache {
     }
     if (resolutionPromises.get(token) === promise) resolutionPromises.delete(token);
     throw settledResolution.error;
+  }
+
+  private recordCoalescedWaitOrThrow(chain: ResolutionFrame[], inFlightResolution: Promise<unknown>): void {
+    const waiter = ResolutionCache.nearestCachedWaiter(chain);
+    if (!waiter) return; // top-level caller: nothing is constructing, so no cycle
+    const targetFrame = this.resolutionFrameByPromise.get(inFlightResolution);
+    /* v8 ignore next -- registered before any coalescer can observe the promise. */
+    if (!targetFrame) return;
+    this.host.recordWaitOrThrow(waiter, targetFrame);
+    this.scheduleWaitRemoval(waiter, targetFrame, inFlightResolution);
+  }
+
+  // Promise settlement is the single teardown point for an in-flight dependency edge.
+  private scheduleWaitRemoval(
+    waiter: ResolutionFrame,
+    target: ResolutionFrame,
+    targetResolution: Promise<unknown>,
+  ): void {
+    void targetResolution.then(
+      () => this.host.removeWait(waiter, target),
+      () => this.host.removeWait(waiter, target),
+    );
+  }
+
+  /**
+   * Finds the nearest cached frame ABOVE the current frame; factory frames are
+   * transparent because they cache nothing, so the cached ancestor owns the edge.
+   **/
+  private static nearestCachedWaiter(chain: ResolutionFrame[]): ResolutionFrame | undefined {
+    for (let i = chain.length - 2; i >= 0; i -= 1) {
+      const frame = chain[i]!;
+      if (frame.lifetime !== Lifetimes.Factory) return frame;
+    }
+    return undefined;
   }
 
   // ── async factory resolution (no caching, tracked for teardown) ──
