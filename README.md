@@ -6,7 +6,7 @@ A pragmatic TypeScript dependency injection container.
 
 No decorators. No reflection. No runtime dependencies. You define modules by name, declare what each one uses, and compose them into a container. Dependencies are resolved through typed namespaces, with no tokens, no casts, and no service locator plumbing. Wrong wiring fails loudly, and as much of it as possible fails at compile time.
 
-> For the design rationale, guarantees, limits, and how terrain compares to other DI libraries, see [docs/TECHNICAL.md](./docs/TECHNICAL.md).
+> For the design rationale, guarantees, limits, and how terrain compares to other DI libraries, see [docs/TECHNICAL.md](https://github.com/reactivesilicon/terrain/blob/main/docs/TECHNICAL.md).
 
 ## Installation
 
@@ -389,7 +389,14 @@ Runtime backstops catch invalid dynamic input and lifecycle failures, each as a 
 - **Module names must be identifiers and not reserved view names** (`InvalidModuleNameError`).
 - **Entry names must be identifiers** (`InvalidEntryNameError`).
 - **Duplicate entry and module names** are rejected (`DuplicateEntryNameError`, `DuplicateModuleNameError`).
+- **Runtime dependency cycles through escape hatches** throw `CircularDependencyError`; concurrent async cycles are detected instead of hanging.
 - **Only modules created by `createModule` are accepted** (`ForeignModuleError`).
+
+### Circular dependencies
+
+Through the composition API, cycles are structurally unwritable: an entry can only reference entries defined before it, and a module can only `uses` modules that already exist. The lower engine still backstops raw-engine/deep-import use. Direct cycles throw `CircularDependencyError`, and concurrent async cycles are tracked across in-flight resolutions so they throw instead of deadlocking.
+
+That async check is intentionally conservative: `resolver.getAsync(T)` inside a provider counts as dependency acquisition whether the returned promise is awaited, returned, raced, or ignored. terrain reasons about the dependency graph, not JavaScript await timing.
 
 ### Captive dependencies
 
@@ -511,7 +518,7 @@ const app = createContainer({
 });
 ```
 
-`options.onDisposeError` observes disposal failures for orphaned in-flight instances only: a resolution that finishes after `dispose()` or `unload()` already evicted its token is disposed immediately, and failures from that orphan disposal are reported to the hook. Normal `dispose()` and `unload()` disposal failures are not reported there; those methods still reject with an `AggregateError`.
+`options.onDisposeError` observes disposal failures for orphaned in-flight instances only: a resolution that finishes after the view is disposed immediately, and failures from that orphan disposal are reported to the hook. Normal `dispose()` failures are not reported there; `dispose()` still rejects with an `AggregateError`.
 
 The returned view exposes one namespace per exposed module, plus:
 

@@ -2,7 +2,7 @@
 
 This document explains the **decisions, guarantees, and limits** behind terrain — the
 "why," not the "how-to." It is for readers who want a deeper understanding than the
-[README](./README.md) usage guide gives, and for anyone evaluating terrain against
+[README](../README.md) usage guide gives, and for anyone evaluating terrain against
 other dependency-injection libraries. It is intentionally not an implementation tour;
 it describes behavior and rationale, not internals.
 
@@ -68,9 +68,17 @@ errors only when resolution runs.
 - **Cross-module cycles** can't be written: `uses` only accepts modules that already
   exist, so a module cannot transitively depend on itself.
 
-A cycle can still be forced through the runtime escape hatch (capturing the builder and
-registering imperatively); that path is caught at resolution with a clear error. The
-point is that _normal, typed_ code cannot express a cycle at all.
+A cycle can still be forced through runtime escape hatches, including raw-engine
+deep imports; those paths are caught at resolution with a clear error. Direct cycles
+are caught by the current resolution chain. Concurrent async cycles are caught by an
+in-flight wait graph, so two providers that coalesce onto each other's pending
+`getAsync` calls throw `CircularDependencyError` instead of deadlocking.
+
+That async check is intentionally conservative: `resolver.getAsync(T)` inside a
+provider counts as dependency acquisition whether the returned promise is awaited,
+returned, raced, or ignored. terrain reasons about the dependency graph, not
+JavaScript await timing. The point is that _normal, typed_ code cannot express a
+cycle at all.
 
 ### Sync/async is a typed boundary
 
@@ -115,6 +123,8 @@ Properties terrain enforces, beyond resolving values:
   errors aggregated rather than swallowed or lost.
 - **Async coalescing** — concurrent resolution of the same async singleton yields a
   single shared instance, not one per caller.
+- **Async cycle safety** — concurrent async dependency cycles are reported as
+  `CircularDependencyError`, not left as mutually waiting promises.
 - **Teardown-race safety** — a resolution that completes after its container/scope was
   disposed (or its module unloaded) is not cached and is disposed immediately rather
   than leaked; disposal errors from those orphans are observable via `onDisposeError`.

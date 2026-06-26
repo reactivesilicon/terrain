@@ -1,17 +1,17 @@
 # terrain — project status
 
-> Maintainer notes. Updated 2026-06-21, branch `improvements/1.2.0`.
+> Maintainer notes. Updated 2026-06-27, branch `main`.
 
 ## Where things stand
 
-**`main`** holds the released **terrain v1.1.0** composition-first API (commit `8df145a`).
+The latest published release is **terrain v1.2.0**
 
 - npm package: **`terrain-di`**; the bare name `terrain` is squatted.
 - GitHub Releases is the changelog channel; `CHANGELOG.md` was deliberately removed.
 - `src/index.ts` exports `errors`, `module-composition`, and option/disposer types. Tokens, the raw `Container`, and the kernel `ModuleBuilder` are internal implementation details reachable only by deep imports.
 - `README.md` documents the composition API as the primary API.
 
-**`improvements/1.2.0`** is the working branch for the next release, layered on v1.1.0. `package.json` is still at `1.1.0` — bump to `1.2.0` at release. It carries:
+The 1.2.0 release carries:
 
 - **Container options through the composition API**: `createContainer({ options, parts })` — a config object (the old variadic `createContainer(...parts)` is removed) that exposes `ContainerOptions.onDisposeError`; scopes inherit it.
 - **Null-prototype accessor/namespace/view hardening** (bug fix): entry names like `source`/`accessorCache`/`toString` previously mis-resolved against internal or `Object.prototype` keys; accessor state is now Symbol-keyed and the namespace/view objects are null-prototype, so any identifier name is safe.
@@ -66,7 +66,7 @@ The v1 engine remains the runtime substrate:
 
 The package entrypoint intentionally exports only the composition layer and framework errors. The token engine is an internal implementation detail for the published package surface.
 
-## Release notes for 1.2.0 (in progress)
+## Release notes for 1.2.0
 
 Release positioning — everything in v1.1.0, plus:
 
@@ -85,7 +85,7 @@ npm pack --dry-run
 npm view terrain-di version
 ```
 
-Observed results (latest run on this branch):
+Observed results (latest run on `main`):
 
 - `bun run quality`: passed.
 - Tests: **199 passed** across **18 files** with coverage gates met.
@@ -94,8 +94,7 @@ Observed results (latest run on this branch):
 
 Before publishing:
 
-- Bump `package.json` to `1.2.0`.
-- Push the branch and let CI validate the exact commit.
+- Let CI validate the exact release commit.
 - Confirm the published version with `npm view terrain-di version`, and `npm pack --dry-run` (the tarball should contain only `LICENSE`, `README.md`, `dist/index.js`, `dist/index.d.ts`, `package.json`).
 - Draft GitHub Release notes; no changelog file is expected.
 
