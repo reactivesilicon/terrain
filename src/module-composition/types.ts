@@ -2,10 +2,13 @@
 
 import type { Simplify, UnionToIntersection } from "../kernel/types";
 import { type TokenMode, TokenModes } from "../token";
-import type { DefinitionOptions, SingletonDefinitionOptions } from "../types";
+import type { ContainerOptions, DefinitionOptions, SingletonDefinitionOptions } from "../types";
 import type { ComposedModule } from "./composed-module";
 import type { ModuleEntryName } from "./module-entry-definitions";
+import type { PublicModuleEntryName } from "./module-name-types";
 import type { ModuleOverride } from "./module-override/module-override";
+
+export type { PublicModuleEntryName, PublicModuleName } from "./module-name-types";
 
 // ── type-level model ────────────────────────────────────────────────────────
 // Each named definition contributes one Entry to its module's EntryMap. The
@@ -102,8 +105,8 @@ export interface ComposedModuleBuilder<
   ModuleEntries extends ModuleEntryMap,
 > {
   single<const EntryName extends ModuleEntryName, T>(
-    entryName: EntryName,
-    provider: (r: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
+    entryName: PublicModuleEntryName<EntryName>,
+    provider: (resolver: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
     options?: SingletonDefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
@@ -112,8 +115,8 @@ export interface ComposedModuleBuilder<
   >;
 
   singleAsync<const EntryName extends ModuleEntryName, T>(
-    entryName: EntryName,
-    provider: (r: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
+    entryName: PublicModuleEntryName<EntryName>,
+    provider: (resolver: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
     options?: SingletonDefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
@@ -122,8 +125,8 @@ export interface ComposedModuleBuilder<
   >;
 
   factory<const EntryName extends ModuleEntryName, T>(
-    entryName: EntryName,
-    provider: (r: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
+    entryName: PublicModuleEntryName<EntryName>,
+    provider: (resolver: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
     options?: DefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
@@ -132,8 +135,8 @@ export interface ComposedModuleBuilder<
   >;
 
   factoryAsync<const EntryName extends ModuleEntryName, T>(
-    entryName: EntryName,
-    provider: (r: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
+    entryName: PublicModuleEntryName<EntryName>,
+    provider: (resolver: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
     options?: DefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
@@ -142,8 +145,8 @@ export interface ComposedModuleBuilder<
   >;
 
   scoped<const EntryName extends ModuleEntryName, T>(
-    entryName: EntryName,
-    provider: (r: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
+    entryName: PublicModuleEntryName<EntryName>,
+    provider: (resolver: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
     options?: DefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
@@ -152,8 +155,8 @@ export interface ComposedModuleBuilder<
   >;
 
   scopedAsync<const EntryName extends ModuleEntryName, T>(
-    entryName: EntryName,
-    provider: (r: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
+    entryName: PublicModuleEntryName<EntryName>,
+    provider: (resolver: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
     options?: DefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
@@ -186,6 +189,13 @@ export interface OverrideBuilder<ModuleName extends ComposedModuleName, ModuleEn
  *  overrides (rewire only), mixed in one list. */
 export type ContainerPart = ComposedModule<ComposedModuleName, ModuleEntryMap> | ModuleOverride<ComposedModuleName>;
 
+/** Input to createContainer: the modules/overrides to compose, plus optional
+ *  root ContainerOptions (e.g. onDisposeError). Scopes inherit these options. */
+export interface ContainerConfig<Parts extends readonly ContainerPart[]> {
+  readonly parts: Parts;
+  readonly options?: ContainerOptions;
+}
+
 export type Namespaces<Parts extends readonly ContainerPart[]> = UnionToIntersection<NamespaceOf<Parts[number]>>;
 
 /** No-arg: a child scope view you dispose() yourself. Callback: the scope is
@@ -211,8 +221,3 @@ export type ScopeView<Parts extends readonly ContainerPart[]> = Simplify<
     dispose(): Promise<void>;
   }
 >;
-
-/** Module names must be PascalCase. The container view's API (scope, start,
- *  dispose — and anything added later) is lowercase, so namespaces and
- *  methods can never collide, with no reserved-word list to maintain. */
-export type PascalCase<Name extends string> = Name extends Capitalize<Name> ? Name : never;

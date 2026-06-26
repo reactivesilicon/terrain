@@ -5,4 +5,12 @@
 export { createContainer, createModule } from "./composition";
 export type { ComposedModule } from "./composed-module";
 export type { ModuleOverride } from "./module-override/module-override";
-export type { ComposedModuleBuilder, ContainerPart, ContainerView, OverrideBuilder, ScopeView } from "./types";
+export type { ContainerOptions } from "../types";
+export type {
+  ComposedModuleBuilder,
+  ContainerConfig,
+  ContainerPart,
+  ContainerView,
+  OverrideBuilder,
+  ScopeView,
+} from "./types";

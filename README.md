@@ -6,6 +6,8 @@ A pragmatic TypeScript dependency injection container.
 
 No decorators. No reflection. No runtime dependencies. You define modules by name, declare what each one uses, and compose them into a container. Dependencies are resolved through typed namespaces, with no tokens, no casts, and no service locator plumbing. Wrong wiring fails loudly, and as much of it as possible fails at compile time.
 
+> For the design rationale, guarantees, limits, and how terrain compares to other DI libraries, see [docs/TECHNICAL.md](./docs/TECHNICAL.md).
+
 ## Installation
 
 ```sh
@@ -121,7 +123,7 @@ const UseCases = createModule("UseCases", { uses: [Data, Infra] }, (m) =>
 
 // Compose. Passing UseCases wires Data and Infra transitively, but only
 // UseCases is exposed as a public namespace.
-const app = createContainer(UseCases);
+const app = createContainer({ parts: [UseCases] });
 const findUser = app.UseCases.findUser(); // FindUserUseCase
 
 findUser.execute("1"); // typed, token-free
@@ -157,7 +159,7 @@ createModule("Infra", (m) => {
 });
 ```
 
-**Module names must be PascalCase; entry names must be valid identifiers.** Module names are the namespaces and the container's own API (`scope`, `start`, `dispose`) is lowercase, so a namespace can never collide with a method — there is no reserved-word list to remember. Literal lowercase module names are rejected by the type signature, and runtime backstops validate the full module and entry names (`InvalidModuleNameError`, `InvalidEntryNameError`).
+**Module names may be any identifier except the view's reserved method names** (`scope`, `start`, `dispose`); **entry names may be any identifier.** Module names are the namespaces, and the reserved list is exactly the view's own methods. The type signature rejects literal reserved module names and non-identifier module or entry names at compile time; runtime backstops re-validate dynamic names (`InvalidModuleNameError`, `InvalidEntryNameError`).
 
 ## Composition with `uses`
 
@@ -174,7 +176,7 @@ const Domain = createModule("Domain", { uses: [Data] }, (m) =>
 **Wiring is transitive; exposure is explicit.** When you compose a container, every `uses` dependency is loaded automatically — `Domain` pulls in `Data`, which pulls in `Infra`. But only the modules you pass to `createContainer` get a public namespace:
 
 ```ts
-const app = createContainer(Domain); // Data and Infra are wired, but hidden
+const app = createContainer({ parts: [Domain] }); // Data and Infra are wired, but hidden
 
 app.Domain.userService().getUser("1"); // ok
 app.Data; // type error — Data is wired but not exposed
@@ -183,7 +185,7 @@ app.Data; // type error — Data is wired but not exposed
 This makes layer boundaries a compile-time fact: callers cannot reach past the namespaces the composition root exposes. Pass the lower modules too if you want their namespaces:
 
 ```ts
-const app = createContainer(Infra, Data, Domain); // all three exposed
+const app = createContainer({ parts: [Infra, Data, Domain] }); // all three exposed
 ```
 
 **`uses` only accepts modules that already exist**, so a module can never (transitively) depend on itself — cross-module cycles are unwritable.
@@ -276,7 +278,7 @@ const Infra = createModule("Infra", (m) =>
   }),
 );
 
-const app = createContainer(Infra);
+const app = createContainer({ parts: [Infra] });
 
 const db = await app.Infra.database(); // () => Promise<Database>
 ```
@@ -295,7 +297,7 @@ const Infra = createModule("Infra", (m) =>
   }),
 );
 
-const app = createContainer(Infra);
+const app = createContainer({ parts: [Infra] });
 await app.start(); // constructs every eager singleton, in parallel
 server.listen(3000); // first request hits warm caches
 ```
@@ -362,7 +364,7 @@ class SilentLogger implements Logger {
 
 const FakeInfra = Infra.override((o) => o.with("logger", (): Logger => new SilentLogger()));
 
-const app = createContainer(UseCases, FakeInfra); // real wiring + the fake
+const app = createContainer({ parts: [UseCases, FakeInfra] }); // real wiring + the fake
 app.UseCases.findUser().execute("1"); // runs against the fake logger
 ```
 
@@ -380,11 +382,11 @@ The type system catches the wiring mistakes it can express:
 - **Cross-module cycles are unwritable** — `uses` only accepts modules that already exist.
 - **Sync providers can't reach async entries** of their imports.
 - **Unknown module or entry names** are type errors.
-- **Lowercase literal module names** are rejected before runtime.
+- **Reserved module names** (`scope`, `start`, `dispose`) and **non-identifier module or entry names** are rejected before runtime.
 
 Runtime backstops catch invalid dynamic input and lifecycle failures, each as a `DIError` subclass:
 
-- **Module names must be PascalCase identifiers** (`InvalidModuleNameError`).
+- **Module names must be identifiers and not reserved view names** (`InvalidModuleNameError`).
 - **Entry names must be identifiers** (`InvalidEntryNameError`).
 - **Duplicate entry and module names** are rejected (`DuplicateEntryNameError`, `DuplicateModuleNameError`).
 - **Only modules created by `createModule` are accepted** (`ForeignModuleError`).
@@ -471,7 +473,7 @@ function createModule(name, setup): ComposedModule;
 function createModule(name, { uses }, setup): ComposedModule;
 ```
 
-`name` must be PascalCase. `setup` receives a builder and must **return the chain**. With `{ uses }`, the used modules' entries are available in every provider resolver under their module names.
+`name` must be an identifier and not a reserved view name (`scope`, `start`, `dispose`). `setup` receives a builder and must **return the chain**. With `{ uses }`, the used modules' entries are available in every provider resolver under their module names.
 
 Builder methods — each takes `(entryName, provider, options?)` and returns the next builder in the chain:
 
@@ -493,10 +495,23 @@ Sync methods (`single`, `factory`, `scoped`) receive a resolver with only sync e
 ### `createContainer`
 
 ```ts
-function createContainer(...parts): ContainerView;
+function createContainer<Parts>(config: { options?: ContainerOptions; parts: Parts }): ContainerView<Parts>;
 ```
 
-`parts` are modules and module overrides, mixed in one list. Modules passed here are exposed as namespaces; their `uses` dependencies are wired transitively but not exposed. Overrides rewire their target module without exposing a namespace.
+`config.parts` are modules and module overrides, mixed in one list. Modules passed here are exposed as namespaces; their `uses` dependencies are wired transitively but not exposed. Overrides rewire their target module without exposing a namespace.
+
+`config.options` configures the root engine container, and scopes inherit those options:
+
+```ts
+const app = createContainer({
+  options: {
+    onDisposeError: (error) => report(error),
+  },
+  parts: [UseCases],
+});
+```
+
+`options.onDisposeError` observes disposal failures for orphaned in-flight instances only: a resolution that finishes after `dispose()` or `unload()` already evicted its token is disposed immediately, and failures from that orphan disposal are reported to the hook. Normal `dispose()` and `unload()` disposal failures are not reported there; those methods still reject with an `AggregateError`.
 
 The returned view exposes one namespace per exposed module, plus:
 

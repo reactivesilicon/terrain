@@ -18,6 +18,8 @@ import { toKernelDefinition } from "./kernel-definition-transformer";
 import {
   type AsyncModuleEntryProvider,
   bundleModuleEntryDefinitionWithToken,
+  eraseAsyncEntryProvider,
+  eraseSyncEntryProvider,
   ModuleEntryDefinitions,
   type ModuleEntryDefinitionWithToken,
   type ModuleEntryName,
@@ -36,10 +38,11 @@ import type { ModuleOverride } from "./module-override/module-override";
 import type {
   ComposedModuleBuilder,
   ComposedModuleName,
+  ContainerConfig,
   ContainerPart,
   ContainerView,
   ModuleEntryMap,
-  PascalCase,
+  PublicModuleName,
   UsedModules,
 } from "./types";
 import { assertNoNamespaceCollisions, wiringOf } from "./wiring";
@@ -62,7 +65,7 @@ function makeBuilder<ModuleName extends ComposedModuleName, ModuleEntries extend
         entryName: entryName,
         lifetime: lifetime,
         mode: TokenModes.Sync,
-        provider: provider as any,
+        provider: eraseSyncEntryProvider(provider),
         options: options,
       });
       return builder;
@@ -79,13 +82,16 @@ function makeBuilder<ModuleName extends ComposedModuleName, ModuleEntries extend
         entryName: entryName,
         lifetime: lifetime,
         mode: TokenModes.Async,
-        provider: provider as any,
+        provider: eraseAsyncEntryProvider(provider),
         options: options,
       });
       return builder;
     };
 
-  // TODO: better typing
+  // Phantom-builder seam: a single runtime object cannot carry the type of a
+  // fluent interface whose every method returns a type with one more entry
+  // accumulated. This assertion is irreducible; the resulting public types are
+  // pinned by test/runs/types.test.ts.
   const builder = {
     single: addSync(Lifetimes.Singleton),
     singleAsync: addAsync(Lifetimes.Singleton),
@@ -103,7 +109,7 @@ type RuntimeModuleBuilder = ComposedModuleBuilder<ComposedModuleName, UsedModule
 type RuntimeModuleSetup = (composedModuleBuilder: RuntimeModuleBuilder) => unknown;
 
 export function createModule<const ModuleName extends ComposedModuleName, ModuleEntries extends ModuleEntryMap>(
-  moduleName: PascalCase<ModuleName>,
+  moduleName: PublicModuleName<ModuleName>,
   setup: (
     composedModuleBuilder: ComposedModuleBuilder<ModuleName, readonly [], {}>,
   ) => ComposedModuleBuilder<ModuleName, readonly [], ModuleEntries>,
@@ -113,7 +119,7 @@ export function createModule<
   const Uses extends UsedModules,
   ModuleEntries extends ModuleEntryMap,
 >(
-  moduleName: PascalCase<ModuleName>,
+  moduleName: PublicModuleName<ModuleName>,
   config: { uses: Uses },
   setup: (
     composedModuleBuilder: ComposedModuleBuilder<ModuleName, Uses, {}>,
@@ -179,7 +185,10 @@ export function createModule(
   return module;
 }
 
-export function createContainer<const Parts extends readonly ContainerPart[]>(...parts: Parts): ContainerView<Parts> {
+export function createContainer<const Parts extends readonly ContainerPart[]>(
+  config: ContainerConfig<Parts>,
+): ContainerView<Parts> {
+  const { options = {}, parts } = config;
   const exposed: ComposedModuleInternals[] = [];
   const overrides: OverrideInternals[] = [];
   for (const part of parts) {
@@ -198,7 +207,7 @@ export function createContainer<const Parts extends readonly ContainerPart[]>(..
     }
   }
 
-  const container = new Container();
+  const container = new Container(options);
   for (const wiringModule of wiring) {
     container.load(wiringModule.kernelModule);
   }

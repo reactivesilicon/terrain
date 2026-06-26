@@ -1,7 +1,8 @@
 import type { AnyToken } from "../token";
 import type { AsyncDefinition, Disposer, ResolutionFrame } from "../types";
+import type { WaitForGraphHost } from "./wait-for-graph";
 
-export interface ResolutionHost {
+export interface ResolutionHost extends WaitForGraphHost {
   isTreeDisposed(): boolean;
   isUnloading(token: AnyToken<any>): boolean;
   trackDisposable<T>(token: AnyToken<T>, instance: T, dispose: Disposer<T>): void;

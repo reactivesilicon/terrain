@@ -19,9 +19,12 @@ export type Accessors<S extends AccessorSpec> = {
 
 declare const REQUIRED_SOURCE: unique symbol;
 
+const ACCESSOR_SOURCE = Symbol("terrain.accessor.source");
+const ACCESSOR_CACHE = Symbol("terrain.accessor.cache");
+
 interface AccessorInstance<Source extends SyncResolver> {
-  readonly source: Source;
-  readonly accessorCache: Record<string, (() => unknown) | undefined>;
+  readonly [ACCESSOR_SOURCE]: Source;
+  readonly [ACCESSOR_CACHE]: Record<string, (() => unknown) | undefined>;
 }
 
 /** Built once per spec: the lazy getters live here, frozen. The Source type
@@ -34,30 +37,35 @@ export class AccessorPrototype<Source extends SyncResolver> {
   // SyncResolver. This contravariant property is what actually rejects that.
   declare readonly [REQUIRED_SOURCE]?: (source: Source) => void;
 
+  // Null-prototype getters mean entry names like toString/constructor/__proto__
+  // are ordinary accessor keys, never inherited Object.prototype behavior.
+  readonly #getters: object;
+
   constructor(resolversByName: Record<string, (source: Source) => unknown>) {
+    const getters = Object.create(null) as Record<string, unknown>;
     for (const [name, resolve] of Object.entries(resolversByName)) {
-      Object.defineProperty(this, name, {
+      Object.defineProperty(getters, name, {
         enumerable: true,
         get(this: AccessorInstance<Source>) {
-          const cached = this.accessorCache[name];
+          const cache = this[ACCESSOR_CACHE];
+          const cached = cache[name];
           if (cached) return cached;
-          const source = this.source;
-          const accessor = () => resolve(source);
-          this.accessorCache[name] = accessor;
+          const accessor = () => resolve(this[ACCESSOR_SOURCE]);
+          cache[name] = accessor;
           return accessor;
         },
       });
     }
+    this.#getters = Object.freeze(getters);
     Object.freeze(this);
   }
 
-  /** O(1): a lightweight per-source instance inheriting these getters. */
+  /** O(1): a lightweight per-source instance inheriting the shared getters.
+   *  Symbol-keyed state and a null-prototype cache cannot collide with names. */
   instantiate(source: Source): object {
-    const instance = Object.create(this) as AccessorInstance<Source>;
-    Object.defineProperties(instance, {
-      source: { value: source },
-      accessorCache: { value: {} },
-    });
+    const instance = Object.create(this.#getters) as AccessorInstance<Source>;
+    Object.defineProperty(instance, ACCESSOR_SOURCE, { value: source });
+    Object.defineProperty(instance, ACCESSOR_CACHE, { value: Object.create(null) });
     return Object.freeze(instance);
   }
 }

@@ -20,21 +20,23 @@ export function buildScopeView<Parts extends readonly ContainerPart[]>(
   scopeContainer: Container,
   exposedModules: readonly ComposedModuleInternals[],
 ): ScopeView<Parts> {
-  return Object.freeze({
-    ...buildContainerNamespaces(scopeContainer, exposedModules),
-    scope: buildScopeMethod<Parts>(scopeContainer, exposedModules),
-    dispose: () => scopeContainer.dispose(),
-  }) as ScopeView<Parts>;
+  return Object.freeze(
+    Object.assign(Object.create(null), buildContainerNamespaces(scopeContainer, exposedModules), {
+      scope: buildScopeMethod<Parts>(scopeContainer, exposedModules),
+      dispose: () => scopeContainer.dispose(),
+    }),
+  ) as ScopeView<Parts>;
 }
 
 export function buildContainerView<Parts extends readonly ContainerPart[]>(
   container: Container,
   exposedModules: readonly ComposedModuleInternals[],
 ): ContainerView<Parts> {
-  return Object.freeze({
-    ...buildContainerNamespaces(container, exposedModules),
-    scope: buildScopeMethod<Parts>(container, exposedModules),
-    start: () => container.start(),
-    dispose: () => container.dispose(),
-  }) as ContainerView<Parts>;
+  return Object.freeze(
+    Object.assign(Object.create(null), buildContainerNamespaces(container, exposedModules), {
+      scope: buildScopeMethod<Parts>(container, exposedModules),
+      start: () => container.start(),
+      dispose: () => container.dispose(),
+    }),
+  ) as ContainerView<Parts>;
 }

@@ -3,13 +3,15 @@ import { createModule as createKernelModule, type Module } from "../../module";
 import { type TokenMode, TokenModes } from "../../token";
 import { Lifetimes, type SingletonDefinitionOptions } from "../../types";
 import { toKernelDefinition } from "../kernel-definition-transformer";
-import type {
-  AsyncModuleEntryDefinitionWithToken,
-  AsyncModuleEntryProvider,
-  ModuleEntryDefinitionWithToken,
-  ModuleEntryName,
-  SyncModuleEntryDefinitionWithToken,
-  SyncModuleEntryProvider,
+import {
+  type AsyncModuleEntryDefinitionWithToken,
+  type AsyncModuleEntryProvider,
+  eraseAsyncEntryProvider,
+  eraseSyncEntryProvider,
+  type ModuleEntryDefinitionWithToken,
+  type ModuleEntryName,
+  type SyncModuleEntryDefinitionWithToken,
+  type SyncModuleEntryProvider,
 } from "../module-entry-definitions";
 import { type ComposedModuleInternals, type OverrideInternals, storeOverrideInternals } from "../module-internals";
 import type { ComposedModuleName } from "../types";
@@ -67,7 +69,7 @@ export function buildModuleOverride<ModuleName extends ComposedModuleName, Modul
     options?: SingletonDefinitionOptions<unknown>,
   ): OverrideBuilder<ModuleName, ModuleEntries> => {
     const original = assertEntryCanBeReplaced(entryName, TokenModes.Sync, options);
-    replacementsByEntryName.set(entryName, { ...original, provider: provider as any, options });
+    replacementsByEntryName.set(entryName, { ...original, provider: eraseSyncEntryProvider(provider), options });
     return overrideBuilder;
   };
 
@@ -77,7 +79,7 @@ export function buildModuleOverride<ModuleName extends ComposedModuleName, Modul
     options?: SingletonDefinitionOptions<unknown>,
   ): OverrideBuilder<ModuleName, ModuleEntries> => {
     const original = assertEntryCanBeReplaced(entryName, TokenModes.Async, options);
-    replacementsByEntryName.set(entryName, { ...original, provider: provider as any, options });
+    replacementsByEntryName.set(entryName, { ...original, provider: eraseAsyncEntryProvider(provider), options });
     return overrideBuilder;
   };
 
@@ -95,7 +97,10 @@ export function buildModuleOverride<ModuleName extends ComposedModuleName, Modul
     ) => collectAsyncReplacement(entryName, provider, options),
   };
 
-  // TODO: refine this, have stricter types here on the overrideBuilder
+  // Phantom-builder seam: overrideBuilder's runtime methods use looser generics
+  // than the OverrideBuilder interface's entry-name constraints, so the object
+  // is not structurally assignable to it. Irreducible; pinned by
+  // test/runs/types.test.ts.
   defineOverride(overrideBuilder as any);
   if (replacementsByEntryName.size === 0) {
     throw new InvalidModuleUseError(`Override of module '${moduleName}' replaces nothing.`);
