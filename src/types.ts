@@ -79,9 +79,13 @@ export interface LoadOptions {
 }
 
 export interface ContainerOptions {
-  /** Observe disposal errors for ORPHANED in-flight instances only — i.e. a
-   *  resolution that completed after dispose()/unload() had already evicted its
-   *  token, so its result can't be cached and is disposed immediately.
+  /** Observe disposal errors that no caller can receive:
+   *  - ORPHANED in-flight instances — a resolution that completed after
+   *    dispose()/unload() had already evicted its token, so its result can't be
+   *    cached and is disposed immediately;
+   *  - a disposal started by dispose() called from inside a disposer, which
+   *    returns without waiting (it can't wait on its own teardown).
+   *  Without this hook, those failures are printed with console.error.
    *  Disposal failures during normal dispose()/unload() are NOT reported here;
    *  they surface via the AggregateError those methods throw. */
   onDisposeError?: (error: unknown) => void;

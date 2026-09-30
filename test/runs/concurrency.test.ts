@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { EventEmitter } from "node:events";
 
-import { DisposedContainerError } from "../../src";
-import { delay, ignore, random } from "../helpers";
+import { describe, expect, it, vi } from "vitest";
+
+import { DisposedContainerError, LifecycleOperationError } from "../../src";
+import { createGate, delay, ignore, random } from "../helpers";
 import { CircularDependencyError, Container, createModule, createAsyncToken, createSyncToken } from "../internal-api";
 
 describe("concurrency", () => {
@@ -26,6 +28,32 @@ describe("concurrency", () => {
     await c.dispose();
     await expect(p).rejects.toThrowError(DisposedContainerError);
     expect(disposed, "orphaned in-flight instance must be disposed").toBe(true);
+  });
+
+  it("in-flight async factory is orphaned on dispose", async () => {
+    const T = createAsyncToken<object>("ifFactoryDispose");
+    const providerGate = createGate();
+    let disposed = 0;
+    const c = new Container();
+    c.load(
+      createModule((m) =>
+        m.factoryAsync(
+          T,
+          async () => {
+            await providerGate.opened;
+            return {};
+          },
+          { dispose: () => void (disposed += 1) },
+        ),
+      ),
+    );
+    const orphaned = ignore(c.getAsync(T));
+    const disposal = c.dispose();
+    providerGate.open();
+
+    await expect(orphaned).rejects.toThrowError(DisposedContainerError);
+    await disposal;
+    expect(disposed).toBe(1);
   });
 
   it("in-flight async factory is orphaned on unload", async () => {
@@ -85,6 +113,32 @@ describe("concurrency", () => {
     expect(() => childB.get(Local)).toThrowError(DisposedContainerError);
     await disposing;
     expect(localBuilt, "child-local instance must not be built during parent dispose").toBe(0);
+  });
+
+  it("an orphaned async instance without a disposer is dropped quietly", async () => {
+    const T = createAsyncToken<object>("orphanNoDisposer");
+    const providerGate = createGate();
+    const printed = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const c = new Container();
+      c.load(
+        createModule((m) =>
+          m.singleAsync(T, async () => {
+            await providerGate.opened;
+            return {};
+          }),
+        ),
+      );
+      const orphaned = ignore(c.getAsync(T));
+      const disposal = c.dispose();
+      providerGate.open();
+
+      await expect(orphaned).rejects.toThrowError(DisposedContainerError);
+      await disposal;
+      expect(printed).not.toHaveBeenCalled();
+    } finally {
+      printed.mockRestore();
+    }
   });
 
   it("pending child async settling after parent dispose is orphaned", async () => {
@@ -221,6 +275,801 @@ describe("concurrency", () => {
     c.load(createModule((m) => m.scoped(Leaf, (r) => ({ n: r.get(Root) }))));
     expect(c.get(Leaf).n).toBe(42);
     expect(c.get(Leaf) === c.get(Leaf), "leaf scoped is cached within its scope").toBeTruthy();
+  });
+});
+
+describe("concurrency: disposal coordination", () => {
+  it("sibling callback scopes dispose concurrently", async () => {
+    const Conn = createSyncToken<object>("sibConn");
+    const disposerGate = createGate();
+    let disposeCount = 0;
+    const root = new Container();
+    root.load(
+      createModule((m) =>
+        m.scoped(Conn, () => ({}), {
+          dispose: async () => {
+            await disposerGate.opened;
+            disposeCount += 1;
+          },
+        }),
+      ),
+    );
+
+    const scopeResults = Promise.allSettled(
+      Array.from({ length: 5 }, (_, i) =>
+        root.withScope((scope) => {
+          scope.get(Conn);
+          return i;
+        }),
+      ),
+    );
+    await delay(0);
+    disposerGate.open();
+
+    expect(await scopeResults).toEqual([0, 1, 2, 3, 4].map((value) => ({ status: "fulfilled", value })));
+    expect(disposeCount).toBe(5);
+  });
+
+  it("every dispose() call settles only after teardown has finished", async () => {
+    const Pool = createSyncToken<object>("joinPool");
+    const disposerGate = createGate();
+    const events: string[] = [];
+    const c = new Container();
+    c.load(
+      createModule((m) =>
+        m.single(Pool, () => ({}), {
+          dispose: async () => {
+            await disposerGate.opened;
+            events.push("pool disposed");
+          },
+        }),
+      ),
+    );
+    c.get(Pool);
+
+    const first = c.dispose().then(() => events.push("first settled"));
+    const second = c.dispose().then(() => events.push("second settled"));
+    await delay(0);
+    expect(events, "no dispose() may settle while a disposer is still running").toEqual([]);
+
+    disposerGate.open();
+    await Promise.all([first, second]);
+    expect(events).toEqual(["pool disposed", "first settled", "second settled"]);
+  });
+
+  it("root dispose joins a child's in-progress disposal: dependents finish before dependencies", async () => {
+    const Pool = createSyncToken<object>("orderPool");
+    const Tx = createSyncToken<object>("orderTx");
+    const txDisposerGate = createGate();
+    const events: string[] = [];
+    const root = new Container();
+    root.load(
+      createModule((m) => {
+        m.single(Pool, () => ({}), { dispose: () => void events.push("pool disposed") });
+        m.scoped(Tx, (r) => (r.get(Pool), {}), {
+          dispose: async () => {
+            await txDisposerGate.opened;
+            events.push("tx disposed");
+          },
+        });
+      }),
+    );
+    const scope = root.createScope();
+    scope.get(Tx);
+
+    const scopeDisposal = scope.dispose();
+    await delay(0);
+    const rootDisposal = root.dispose();
+    await delay(0);
+    expect(events, "the root must wait for the child's disposal before its own").toEqual([]);
+
+    txDisposerGate.open();
+    await Promise.all([scopeDisposal, rootDisposal]);
+    expect(events).toEqual(["tx disposed", "pool disposed"]);
+  });
+
+  it("a callback scope finishing while its root is mid-dispose still returns its body result", async () => {
+    const Conn = createSyncToken<object>("midConn");
+    const firstScopeDisposerGate = createGate();
+    const bodyGate = createGate();
+    let disposeCount = 0;
+    const root = new Container();
+    root.load(
+      createModule((m) =>
+        m.scoped(Conn, () => ({}), {
+          dispose: async () => {
+            disposeCount += 1;
+            if (disposeCount === 1) await firstScopeDisposerGate.opened;
+          },
+        }),
+      ),
+    );
+    const scopeHoldingUpTheCascade = root.createScope();
+    scopeHoldingUpTheCascade.get(Conn);
+    const lateScope = root.withScope(async (scope) => {
+      scope.get(Conn);
+      await bodyGate.opened;
+      return "late body result";
+    });
+
+    const rootDisposal = root.dispose();
+    await delay(0);
+    bodyGate.open(); // the cascade has not reached this scope yet
+    await delay(0);
+    firstScopeDisposerGate.open();
+
+    await expect(lateScope).resolves.toBe("late body result");
+    await rootDisposal;
+    expect(disposeCount).toBe(2);
+  });
+
+  it("a failing disposal is reported only to its starter: an ancestor that joined it resolves", async () => {
+    const Tx = createSyncToken<object>("failTx");
+    const disposerGate = createGate();
+    const root = new Container();
+    root.load(
+      createModule((m) =>
+        m.scoped(Tx, () => ({}), {
+          dispose: async () => {
+            await disposerGate.opened;
+            throw new Error("tx-boom");
+          },
+        }),
+      ),
+    );
+    const scope = root.createScope();
+    scope.get(Tx);
+
+    const scopeDisposal = scope.dispose().then(
+      () => null,
+      (e: unknown) => e,
+    );
+    await delay(0);
+    const rootDisposal = root.dispose();
+    disposerGate.open();
+
+    const scopeFailure = await scopeDisposal;
+    expect(scopeFailure).toBeInstanceOf(AggregateError);
+    expect((scopeFailure as AggregateError).errors.map((e) => (e as Error).message)).toEqual(["tx-boom"]);
+    await expect(rootDisposal).resolves.toBeUndefined();
+  });
+
+  it("a failure in a scope disposal the root's cascade started goes to the root, not the callback scope", async () => {
+    const Tx = createSyncToken<object>("cascadeFailTx");
+    const bodyGate = createGate();
+    const root = new Container();
+    root.load(
+      createModule((m) =>
+        m.scoped(Tx, () => ({}), {
+          dispose: () => {
+            throw new Error("tx-boom");
+          },
+        }),
+      ),
+    );
+    const request = root.withScope(async (scope) => {
+      scope.get(Tx);
+      await bodyGate.opened;
+      return "body result";
+    });
+
+    const shutdown = root.dispose().then(
+      () => null,
+      (e: unknown) => e,
+    );
+    await delay(0); // the cascade has started this scope's disposal
+    bodyGate.open();
+
+    await expect(request).resolves.toBe("body result");
+    const shutdownFailure = await shutdown;
+    expect(shutdownFailure).toBeInstanceOf(AggregateError);
+    expect((shutdownFailure as AggregateError).errors.map((e) => (e as Error).message)).toEqual(["tx-boom"]);
+  });
+
+  it("dispose() after a failed dispose() resolves", async () => {
+    const T = createSyncToken<object>("failedTwice");
+    const c = new Container();
+    c.load(
+      createModule((m) =>
+        m.single(T, () => ({}), {
+          dispose: () => {
+            throw new Error("boom");
+          },
+        }),
+      ),
+    );
+    c.get(T);
+
+    await expect(c.dispose()).rejects.toBeInstanceOf(AggregateError);
+    await expect(c.dispose()).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["before", false],
+    ["after an await", true],
+  ])("a disposer awaiting its own container's dispose() %s returns at once", async (_, awaitsFirst) => {
+    const T = createSyncToken<object>(`selfAwait-${awaitsFirst}`);
+    let disposerFinished = false;
+    const c = new Container();
+    c.load(
+      createModule((m) =>
+        m.single(T, () => ({}), {
+          dispose: async () => {
+            if (awaitsFirst) await Promise.resolve();
+            await c.dispose();
+            disposerFinished = true;
+          },
+        }),
+      ),
+    );
+    c.get(T);
+
+    await c.dispose();
+    expect(disposerFinished).toBe(true);
+  });
+
+  it("a disposer awaiting its own scope's dispose() returns at once", async () => {
+    const Tx = createSyncToken<object>("selfScopeAwait");
+    const root = new Container();
+    const scope = root.createScope();
+    root.load(
+      createModule((m) =>
+        m.scoped(Tx, () => ({}), {
+          dispose: async () => {
+            await Promise.resolve();
+            await scope.dispose();
+          },
+        }),
+      ),
+    );
+    scope.get(Tx);
+
+    await scope.dispose();
+    await root.dispose();
+  });
+
+  it("a scoped disposer awaiting an already-disposing ancestor's dispose() returns at once", async () => {
+    const Tx = createSyncToken<object>("ancestorAwait");
+    const root = new Container();
+    root.load(
+      createModule((m) =>
+        m.scoped(Tx, () => ({}), {
+          dispose: async () => {
+            await Promise.resolve();
+            await root.dispose();
+          },
+        }),
+      ),
+    );
+    root.createScope().get(Tx);
+
+    await root.dispose();
+  });
+
+  it("a scoped disposer starting its ancestor's disposal returns at once; the ancestor then finishes", async () => {
+    const Pool = createSyncToken<object>("ancestorStartPool");
+    const Tx = createSyncToken<object>("ancestorStartTx");
+    const events: string[] = [];
+    const root = new Container();
+    root.load(
+      createModule((m) => {
+        m.single(Pool, () => ({}), { dispose: () => void events.push("pool disposed") });
+        m.scoped(Tx, () => ({}), {
+          dispose: async () => {
+            await Promise.resolve();
+            await root.dispose();
+            events.push("tx disposed");
+          },
+        });
+      }),
+    );
+    root.get(Pool);
+
+    await root.withScope((scope) => void scope.get(Tx));
+    expect(root.isTreeDisposed(), "the disposer's call started the root's disposal").toBe(true);
+    await root.dispose(); // an outside caller joins it and waits for it to finish
+    expect(events).toEqual(["tx disposed", "pool disposed"]);
+  });
+
+  it("a failure of a disposal started from inside a disposer goes to onDisposeError", async () => {
+    const Pool = createSyncToken<object>("reportedPool");
+    const Tx = createSyncToken<object>("reportedTx");
+    const reported: unknown[] = [];
+    const root = new Container({ onDisposeError: (error) => reported.push(error) });
+    root.load(
+      createModule((m) => {
+        m.single(Pool, () => ({}), {
+          dispose: () => {
+            throw new Error("pool-boom");
+          },
+        });
+        m.scoped(Tx, () => ({}), { dispose: () => root.dispose() });
+      }),
+    );
+    root.get(Pool);
+
+    await root.withScope((scope) => void scope.get(Tx));
+    await root.dispose();
+    expect(reported).toHaveLength(1);
+    expect((reported[0] as AggregateError).errors.map((e) => (e as Error).message)).toEqual(["pool-boom"]);
+  });
+
+  it.each([
+    [
+      "an event listener it fires",
+      (root: Container) => {
+        const closeEvents = new EventEmitter();
+        let listenerDisposal: Promise<void> = Promise.resolve();
+        closeEvents.on("closed", () => (listenerDisposal = root.dispose()));
+        return async () => {
+          await Promise.resolve();
+          closeEvents.emit("closed");
+          await listenerDisposal;
+        };
+      },
+    ],
+    [
+      "a callback it defers",
+      (root: Container) => () => new Promise<void>((resolve) => setTimeout(() => resolve(root.dispose()), 0)),
+    ],
+  ])("a disposer's call is recognized through %s", async (_, makeDisposer) => {
+    const Tx = createSyncToken<object>(`recognized-${String(_)}`);
+    const root = new Container();
+    root.load(createModule((m) => m.scoped(Tx, () => ({}), { dispose: makeDisposer(root) })));
+
+    await root.withScope((scope) => void scope.get(Tx));
+    await root.dispose();
+  });
+
+  it("an outside caller arriving while a disposer runs still waits for teardown", async () => {
+    const T = createSyncToken<object>("outsideWaits");
+    const disposerGate = createGate();
+    const c = new Container();
+    c.load(createModule((m) => m.single(T, () => ({}), { dispose: () => disposerGate.opened })));
+    c.get(T);
+
+    const first = c.dispose();
+    await delay(0); // the disposer is now running
+    let outsideSettled = false;
+    const outside = c.dispose().then(() => (outsideSettled = true));
+    await delay(0);
+    expect(outsideSettled).toBe(false);
+
+    disposerGate.open();
+    await Promise.all([first, outside]);
+    expect(outsideSettled).toBe(true);
+  });
+
+  it("a call from code a finished disposer left behind waits for teardown like any outside call", async () => {
+    const Db = createSyncToken<object>("leftBehindDb");
+    const Req = createSyncToken<object>("leftBehindReq");
+    const dbDisposerGate = createGate();
+    const events: string[] = [];
+    let leftBehindCall: Promise<void> = Promise.resolve();
+    const root = new Container();
+    root.load(
+      createModule((m) => {
+        m.single(Db, () => ({}), {
+          dispose: async () => {
+            await dbDisposerGate.opened;
+            events.push("db closed");
+          },
+        });
+        m.scoped(Req, () => ({}), {
+          dispose: () => {
+            setTimeout(() => {
+              leftBehindCall = root.dispose().then(() => void events.push("left-behind dispose() returned"));
+            }, 0);
+          },
+        });
+      }),
+    );
+    root.get(Db);
+
+    await root.withScope((scope) => void scope.get(Req)); // the scoped disposer has finished
+    await delay(5); // its timer has fired and called root.dispose()
+    dbDisposerGate.open();
+    await leftBehindCall;
+    expect(events).toEqual(["db closed", "left-behind dispose() returned"]);
+  });
+
+  it("a non-native thenable a disposer returns is still awaited by teardown", async () => {
+    const Pool = createSyncToken<object>("thenablePool");
+    const Tx = createSyncToken<object>("thenableTx");
+    const events: string[] = [];
+    const c = new Container();
+    const closingThenable = {
+      // oxlint-disable-next-line unicorn/no-thenable -- this test is about a non-native thenable
+      then(onFulfilled: () => void) {
+        setTimeout(() => {
+          events.push("tx closed");
+          onFulfilled();
+        }, 5);
+      },
+    } as unknown as Promise<void>;
+    c.load(
+      createModule((m) => {
+        m.single(Pool, () => ({}), { dispose: () => void events.push("pool closed") });
+        m.scoped(Tx, (r) => (r.get(Pool), {}), { dispose: () => closingThenable });
+      }),
+    );
+    c.get(Tx);
+
+    await c.dispose();
+    expect(events).toEqual(["tx closed", "pool closed"]);
+  });
+
+  it("a disposer returning a plain non-promise value is treated as finished at once", async () => {
+    const T = createSyncToken<{ close(): object }>("plainReturn");
+    let closed = 0;
+    const c = new Container();
+    const closeReturningSelf = (pool: { close(): object }) => pool.close() as unknown as void; // e.g. a JS close() returning `this`
+    c.load(
+      createModule((m) =>
+        m.single(
+          T,
+          () => ({
+            close() {
+              closed += 1;
+              return this;
+            },
+          }),
+          { dispose: closeReturningSelf },
+        ),
+      ),
+    );
+    c.get(T);
+
+    await c.dispose();
+    expect(closed).toBe(1);
+  });
+
+  describe("failures no caller can receive", () => {
+    const loadGatedSingletonWithFailingDisposer = (
+      c: Container,
+      token: ReturnType<typeof createAsyncToken<object>>,
+    ) => {
+      const providerGate = createGate();
+      c.load(
+        createModule((m) =>
+          m.singleAsync(
+            token,
+            async () => {
+              await providerGate.opened;
+              return {};
+            },
+            {
+              dispose: () => {
+                throw new Error("orphan-boom");
+              },
+            },
+          ),
+        ),
+      );
+      return providerGate;
+    };
+
+    it("are printed with console.error when no onDisposeError hook is set", async () => {
+      const printed = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const Orphan = createAsyncToken<object>("printedOrphan");
+        const c = new Container();
+        const providerGate = loadGatedSingletonWithFailingDisposer(c, Orphan);
+        const orphaned = ignore(c.getAsync(Orphan));
+        const disposal = c.dispose();
+        providerGate.open();
+        await orphaned.catch(() => {});
+        await disposal;
+
+        expect(printed).toHaveBeenCalledTimes(1);
+        expect((printed.mock.calls[0]![0] as Error).message).toBe("orphan-boom");
+      } finally {
+        printed.mockRestore();
+      }
+    });
+
+    it("go only to the onDisposeError hook when one is set", async () => {
+      const printed = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const Orphan = createAsyncToken<object>("hookedOrphan");
+        const reported: unknown[] = [];
+        const c = new Container({ onDisposeError: (error) => reported.push(error) });
+        const providerGate = loadGatedSingletonWithFailingDisposer(c, Orphan);
+        const orphaned = ignore(c.getAsync(Orphan));
+        const disposal = c.dispose();
+        providerGate.open();
+        await orphaned.catch(() => {});
+        await disposal;
+
+        expect(reported.map((e) => (e as Error).message)).toEqual(["orphan-boom"]);
+        expect(printed).not.toHaveBeenCalled();
+      } finally {
+        printed.mockRestore();
+      }
+    });
+  });
+
+  it.each([
+    ["starts", false],
+    ["joins", true],
+  ])(
+    "scope disposers awaiting each other's dispose() don't deadlock when one %s the other's disposal",
+    async (_, siblingAlreadyDisposing) => {
+      const A = createSyncToken<object>(`mutualA-${siblingAlreadyDisposing}`);
+      const B = createSyncToken<object>(`mutualB-${siblingAlreadyDisposing}`);
+      const bDisposerGate = createGate();
+      const root = new Container();
+      const scopeA = root.createScope();
+      const scopeB = root.createScope();
+      root.load(
+        createModule((m) => {
+          m.scoped(A, () => ({}), {
+            dispose: async () => {
+              await Promise.resolve();
+              await scopeB.dispose();
+            },
+          });
+          m.scoped(B, () => ({}), {
+            dispose: async () => {
+              await bDisposerGate.opened;
+              await scopeA.dispose();
+            },
+          });
+        }),
+      );
+      scopeA.get(A);
+      scopeB.get(B);
+
+      const scopeBDisposal = siblingAlreadyDisposing ? scopeB.dispose() : Promise.resolve();
+      const scopeADisposal = scopeA.dispose();
+      await delay(0); // A's disposer is now waiting on B's disposal
+      bDisposerGate.open();
+
+      await Promise.all([scopeADisposal, scopeBDisposal]);
+      await root.dispose();
+    },
+  );
+
+  it("a three-way cycle of scope disposers awaiting each other's dispose() doesn't deadlock", async () => {
+    const tokens = [0, 1, 2].map((i) => createSyncToken<object>(`threeWay${i}`));
+    const root = new Container();
+    const scopes = tokens.map(() => root.createScope());
+    root.load(
+      createModule((m) =>
+        tokens.forEach((token, i) =>
+          m.scoped(token, () => ({}), {
+            dispose: async () => {
+              await Promise.resolve();
+              await scopes[(i + 1) % scopes.length]!.dispose();
+            },
+          }),
+        ),
+      ),
+    );
+    scopes.forEach((scope, i) => scope.get(tokens[i]!));
+
+    await scopes[0]!.dispose();
+    await root.dispose();
+  });
+
+  it("disposers of two separate apps awaiting each other's dispose() don't deadlock", async () => {
+    const X = createSyncToken<object>("crossAppX");
+    const Y = createSyncToken<object>("crossAppY");
+    const firstApp = new Container();
+    const secondApp = new Container();
+    firstApp.load(
+      createModule((m) =>
+        m.single(X, () => ({}), {
+          dispose: async () => {
+            await Promise.resolve();
+            await secondApp.dispose();
+          },
+        }),
+      ),
+    );
+    secondApp.load(
+      createModule((m) =>
+        m.single(Y, () => ({}), {
+          dispose: async () => {
+            await Promise.resolve();
+            await firstApp.dispose();
+          },
+        }),
+      ),
+    );
+    firstApp.get(X);
+    secondApp.get(Y);
+
+    await firstApp.dispose();
+  });
+
+  it("a disposer awaiting another scope's dispose() still waits for it when there is no cycle", async () => {
+    const A = createSyncToken<object>("noCycleA");
+    const B = createSyncToken<object>("noCycleB");
+    const bDisposerGate = createGate();
+    const events: string[] = [];
+    const root = new Container();
+    const scopeA = root.createScope();
+    const scopeB = root.createScope();
+    root.load(
+      createModule((m) => {
+        m.scoped(A, () => ({}), {
+          dispose: async () => {
+            await scopeB.dispose();
+            events.push("A saw B finish");
+          },
+        });
+        m.scoped(B, () => ({}), {
+          dispose: async () => {
+            await bDisposerGate.opened;
+            events.push("B finished");
+          },
+        });
+      }),
+    );
+    scopeA.get(A);
+    scopeB.get(B);
+
+    const scopeADisposal = scopeA.dispose();
+    await delay(0);
+    expect(events).toEqual([]);
+    bDisposerGate.open();
+    await scopeADisposal;
+    expect(events).toEqual(["B finished", "A saw B finish"]);
+  });
+
+  it("a cycle that runs through a nested scope's disposer doesn't deadlock", async () => {
+    const RequestConn = createSyncToken<object>("nestedCycleConn");
+    const Y = createSyncToken<object>("nestedCycleY");
+    const firstApp = new Container();
+    const secondApp = new Container();
+    firstApp.load(
+      createModule((m) =>
+        m.scoped(RequestConn, () => ({}), {
+          dispose: async () => {
+            await Promise.resolve();
+            await secondApp.dispose();
+          },
+        }),
+      ),
+    );
+    secondApp.load(
+      createModule((m) =>
+        m.single(Y, () => ({}), {
+          dispose: async () => {
+            await Promise.resolve();
+            await firstApp.dispose(); // firstApp waits on its request scope, which waits on secondApp
+          },
+        }),
+      ),
+    );
+    secondApp.get(Y);
+    const requestScope = firstApp.createScope();
+    requestScope.get(RequestConn);
+
+    await requestScope.dispose();
+    await firstApp.dispose();
+  });
+
+  it("waits shared through a diamond are not mistaken for a cycle", async () => {
+    const [T, C, D, E, W] = ["T", "C", "D", "E", "W"].map((name) => createSyncToken<object>(`diamond${name}`));
+    const eDisposerGate = createGate();
+    const events: string[] = [];
+    const root = new Container();
+    const [scopeT, scopeC, scopeD, scopeE, scopeW] = [T, C, D, E, W].map(() => root.createScope());
+    root.load(
+      createModule((m) => {
+        m.scoped(T!, () => ({}), {
+          dispose: async () => void (await Promise.all([scopeC!.dispose(), scopeD!.dispose()])),
+        });
+        m.scoped(C!, () => ({}), { dispose: () => scopeE!.dispose() });
+        m.scoped(D!, () => ({}), { dispose: () => scopeE!.dispose() });
+        m.scoped(E!, () => ({}), {
+          dispose: async () => {
+            await eDisposerGate.opened;
+            events.push("E finished");
+          },
+        });
+        m.scoped(W!, () => ({}), {
+          dispose: async () => {
+            await scopeT!.dispose(); // T waits on C and D, which both wait on E: no path back to W
+            events.push("W saw T finish");
+          },
+        });
+      }),
+    );
+    [scopeT, scopeC, scopeD, scopeE, scopeW].forEach((scope, i) => scope!.get([T, C, D, E, W][i]!));
+
+    const scopeTDisposal = scopeT!.dispose();
+    await delay(0);
+    const scopeWDisposal = scopeW!.dispose();
+    await delay(0);
+    expect(events, "W must wait: nothing in T's waits leads back to it").toEqual([]);
+    eDisposerGate.open();
+
+    await Promise.all([scopeTDisposal, scopeWDisposal]);
+    expect(events).toEqual(["E finished", "W saw T finish"]);
+    await root.dispose();
+  });
+
+  it("a disposer's dispose() of a sibling scope in the same tree is an ordinary call", async () => {
+    const Tx = createSyncToken<object>("siblingTx");
+    const Log = createSyncToken<object>("siblingLog");
+    const events: string[] = [];
+    const root = new Container();
+    const sibling = root.createScope();
+    root.load(
+      createModule((m) => {
+        m.scoped(Tx, () => ({}), { dispose: () => sibling.dispose() });
+        m.scoped(Log, () => ({}), { dispose: () => void events.push("sibling disposed") });
+      }),
+    );
+    sibling.get(Log);
+    const scope = root.createScope();
+    scope.get(Tx);
+
+    await scope.dispose();
+    expect(events).toEqual(["sibling disposed"]);
+    await root.dispose();
+  });
+
+  it("a disposer's dispose() of an unrelated container tree is an ordinary call", async () => {
+    const T = createSyncToken<object>("otherTree");
+    const Other = createSyncToken<object>("otherTreeEntry");
+    const events: string[] = [];
+    const other = new Container();
+    other.load(createModule((m) => m.single(Other, () => ({}), { dispose: () => void events.push("other disposed") })));
+    other.get(Other);
+    const c = new Container();
+    c.load(createModule((m) => m.single(T, () => ({}), { dispose: () => other.dispose() })));
+    c.get(T);
+
+    await c.dispose();
+    expect(events).toEqual(["other disposed"]);
+  });
+
+  it("an orphan disposer awaiting its container's dispose() does not deadlock teardown", async () => {
+    const T = createAsyncToken<object>("orphanAwait");
+    const providerGate = createGate();
+    const c = new Container();
+    c.load(
+      createModule((m) =>
+        m.singleAsync(
+          T,
+          async () => {
+            await providerGate.opened;
+            return {};
+          },
+          { dispose: () => c.dispose() },
+        ),
+      ),
+    );
+    const orphaned = ignore(c.getAsync(T));
+    const disposal = c.dispose();
+    providerGate.open();
+
+    await expect(orphaned).rejects.toThrowError(DisposedContainerError);
+    await disposal;
+  });
+
+  it("unload is rejected while a scope is disposing, and allowed once it finishes", async () => {
+    const Config = createSyncToken<number>("unloadConfig");
+    const Tx = createSyncToken<object>("unloadTx");
+    const disposerGate = createGate();
+    const configModule = createModule((m) => m.single(Config, () => 1));
+    const root = new Container();
+    root.load(configModule);
+    root.load(createModule((m) => m.scoped(Tx, () => ({}), { dispose: () => disposerGate.opened })));
+    const scope = root.createScope();
+    scope.get(Tx);
+
+    const scopeDisposal = scope.dispose();
+    await expect(root.unload(configModule)).rejects.toThrowError(LifecycleOperationError);
+
+    disposerGate.open();
+    await scopeDisposal;
+    await root.unload(configModule);
+    expect(root.has(Config)).toBe(false);
   });
 });
 

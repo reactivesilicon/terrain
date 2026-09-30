@@ -115,7 +115,7 @@ export class ShadowedDefinitionError extends DIError {
 
 export class LifecycleOperationError extends DIError {
   constructor() {
-    super("A container lifecycle operation (load/unload/dispose) is already in progress.");
+    super("A container load/unload cannot overlap another load, unload, or dispose in the same container tree.");
     this.name = "LifecycleOperationError";
   }
 }

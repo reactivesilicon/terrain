@@ -9,12 +9,18 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # The supported range (package.json engines). Node 22 implements
+        # AsyncLocalStorage differently from 24, and disposal relies on it.
+        node-version: [22, 24]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ matrix.node-version }}
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -27,6 +33,10 @@ jobs:
       # coverage thresholds. Same gate as local development.
       - name: Quality gate
         run: bun run quality
+
+      - name: Test suite on Bun's runtime
+        if: matrix.node-version == 24
+        run: bunx --bun vitest run
 
       - name: Build
         run: bun run build

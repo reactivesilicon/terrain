@@ -1,6 +1,6 @@
 # terrain — project status
 
-> Maintainer notes. Updated 2026-06-27, branch `main`.
+> Maintainer notes. Updated 2026-10-01, branch `develop`.
 
 ## Where things stand
 
@@ -16,6 +16,20 @@ The 1.2.0 release carries:
 - **Container options through the composition API**: `createContainer({ options, parts })` — a config object (the old variadic `createContainer(...parts)` is removed) that exposes `ContainerOptions.onDisposeError`; scopes inherit it.
 - **Null-prototype accessor/namespace/view hardening** (bug fix): entry names like `source`/`accessorCache`/`toString` previously mis-resolved against internal or `Object.prototype` keys; accessor state is now Symbol-keyed and the namespace/view objects are null-prototype, so any identifier name is safe.
 - **Relaxed module names**: any identifier except the reserved view methods `scope`/`start`/`dispose` (PascalCase is no longer required). Both module and entry names are now validated for identifier-ness at **compile time** (template-literal type guard) as well as at runtime.
+
+## Unreleased (1.3.0 candidate)
+
+Minor, not patch: terrain now requires a server runtime, Node.js ≥ 22 (`engines`; Node 20 is end-of-life). It imports the built-in `node:async_hooks`, so browser bundles, which were never a declared target but happened to work, now fail. No new public API. Performance note, measured 2026-10-01: on Node 22, once terrain's first disposer runs `AsyncLocalStorage`, every `await` in the process costs ~75 ns more (~3× on a pure-await microbenchmark; far less in I/O-bound apps, and nothing extra if the app already uses `AsyncLocalStorage`, e.g. Next.js or OpenTelemetry). Node 24 has no such cost.
+
+- **Direction: server-side DI.** Supported: Node.js ≥ 22, Bun, Deno, and frameworks' server code. Verified 2026-10-01 against the packed artifact: Node 20/22/24/26, Bun 1.4, Deno 2.9, and a Next.js 16 app (server component, server action, Node and Edge route handlers). TanStack Start's own server packages import the same `AsyncLocalStorage`. Cloudflare Workers need `nodejs_compat` (not tested here). Build uses `platform: "node"`; the published `.d.ts` does not reference Node types.
+- **Concurrent disposal fix** (bug fix): disposal used to take the tree-wide lifecycle lock, so overlapping disposals rejected each other. Concurrent callback scopes (parallel requests) failed with `LifecycleOperationError` and skipped their teardown; `app.dispose()` while any scope was mid-disposal threw and left the app's own instances undisposed; and a second concurrent `dispose()` call resolved before teardown finished. Now:
+  - each container records one disposal that every outside `dispose()` call joins and waits for;
+  - an ancestor's cascade waits for a descendant's in-progress disposal (dependents before dependencies);
+  - the lock (`src/container/lifecycle-lock.ts`) only makes load/unload exclusive against other lifecycle operations, so `LifecycleOperationError` is unreachable through the public API;
+  - a disposal failure is reported once, to whoever started it (the explicit caller, or an ancestor's cascade); joining calls resolve. A repeat `dispose()` after a failure resolves, and a callback scope whose disposal the app's cascade started still returns its body result (both as in 1.2.0).
+- **Disposers calling `dispose()`**: every user disposer runs inside an `AsyncLocalStorage` context holding its run (`Container.runDisposer`); each container tracks its unfinished runs (finished = returned, thrown, or its promise settled; a non-native thenable, outside the `Disposer` type, is still awaited by teardown but counts as finished at once). A `dispose()` from a still-running disposer returns at once if the target disposal would (transitively) wait on that disposer's container, starting the disposal if needed; otherwise it waits and is recorded as awaited by the run while pending. "Would wait on" follows subtree containment plus those recorded waits, so it covers the own container/ancestor case, sibling scopes whose disposers dispose each other (whether one starts or joins the other's disposal), longer cycles, and cycles across separate apps; a call with no cycle still waits. Code a finished disposer left behind waits like any outside caller. (1.2.0: resolved immediately when already disposing, else `LifecycleOperationError`.) Remaining limit, common to any library: a disposer waiting for something other than `dispose()` that only happens after teardown finishes waits on itself.
+- **Failures no caller can receive** (orphaned in-flight instances, and a disposal started by a disposer's own `dispose()`): go to `onDisposeError`; without a hook they are now printed with `console.error` (1.2.0: dropped silently). Not thrown: orphan disposal also happens mid-request (a request scope ending while a resolution it started is in flight), so an unhandled rejection would crash a live server over one cleanup.
+- **Open**: async cached resolution commits a few microtasks after its teardown check, so a `dispose()` landing in that window leaks the instance (the caller receives it; its disposer never runs). Fix planned: commit inside `ResolutionCache.guard` atomically with the check.
 
 ## Public API now
 

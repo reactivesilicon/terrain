@@ -194,9 +194,9 @@ export class ResolutionCache {
   private async disposeOrphan<T>(instance: T, dispose?: Disposer<T>): Promise<void> {
     if (!dispose) return;
     try {
-      await dispose(instance);
+      await this.host.runDisposer(dispose, instance);
     } catch (error) {
-      this.host.notifyDisposeError(error);
+      this.host.reportUnreceivableDisposalFailure(error);
     }
   }
 

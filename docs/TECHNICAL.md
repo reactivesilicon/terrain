@@ -8,7 +8,7 @@ it describes behavior and rationale, not internals.
 
 ## Positioning
 
-terrain is a TypeScript-first DI container with a **composition-first** model:
+terrain is a TypeScript-first DI container for **server runtimes** with a **composition-first** model:
 
 - **No decorators, no reflection, no runtime dependencies.** Wiring is plain code.
 - **No service locator, no tokens in the public API.** You name modules and entries;
@@ -127,9 +127,22 @@ Properties terrain enforces, beyond resolving values:
   `CircularDependencyError`, not left as mutually waiting promises.
 - **Teardown-race safety** — a resolution that completes after its container/scope was
   disposed (or its module unloaded) is not cached and is disposed immediately rather
-  than leaked; disposal errors from those orphans are observable via `onDisposeError`.
-- **Exclusive lifecycle operations** — load/unload/dispose are mutually exclusive across
-  a container tree, so structural changes can't interleave.
+  than leaked; disposal errors from those orphans are observable via `onDisposeError`, and
+  printed with `console.error` when no hook is set.
+- **Coordinated lifecycle operations** — disposals run concurrently: sibling scopes (e.g.
+  parallel requests) tear down independently, and a container disposing while a descendant
+  is mid-disposal waits for it, keeping dependents-before-dependencies order. Internal
+  structural changes (module load/unload) are exclusive against every other lifecycle
+  operation in the tree.
+- **Disposers can't deadlock teardown through `dispose()`** — a `dispose()` call from a
+  still-running disposer never waits on a disposal that is (directly or indirectly) waiting
+  on that disposer: its own container, scope, or an ancestor, or another scope or app whose
+  disposer is itself waiting on it. Such a call returns at once; every other call waits,
+  and is recorded while it waits so the other side of a cycle can see it — the same
+  wait-for-graph idea the engine uses for async resolution cycles. This holds anywhere in
+  what the disposer does while it is still running (after an `await`, in an event listener
+  it fires). Outside callers, including code a finished disposer left behind, wait for
+  teardown to finish. "Which disposer is running" comes from `AsyncLocalStorage`.
 - **Tree disposal semantics** — disposing a container invalidates its whole subtree;
   a disposed container throws on use.
 - **Name safety** — module and entry names are validated to identifiers (reserved view
@@ -166,7 +179,10 @@ Stated plainly, because they matter for evaluation:
   instead.
 - **TypeScript-first.** The guardrails are types; used from plain JavaScript you keep the
   runtime backstops but lose the compile-time guarantees.
-- **ESM-only, modern runtime.** Pure ES modules, no CommonJS build; targets Node ≥ 20.
+- **Server runtimes only.** Node.js ≥ 22, Bun, and Deno, including frameworks' server code
+  (e.g. Next.js, TanStack Start). terrain uses the built-in `node:async_hooks`, so it can't be
+  bundled for the browser.
+- **ESM-only.** Pure ES modules, no CommonJS build.
 
 ## How to compare it to peers
 
@@ -191,7 +207,8 @@ lifecycle/disposal, that is what terrain optimizes for.
 
 ## Runtime & packaging
 
-- **Zero runtime dependencies**; side-effect-free and tree-shakeable.
+- **Zero runtime dependencies**; side-effect-free and tree-shakeable. The only import is
+  the runtime built-in `node:async_hooks` (for `AsyncLocalStorage`).
 - **ESM-only** build (`dist/index.js` + `dist/index.d.ts`); no decorators or metadata
   emit required in consumers.
 - **Engine boundary:** the published surface is the composition layer plus framework

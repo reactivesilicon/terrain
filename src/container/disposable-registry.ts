@@ -14,6 +14,8 @@ interface TrackedDisposable<T> {
 export class DisposableRegistry {
   private items: TrackedDisposable<any>[] = [];
 
+  constructor(private readonly runDisposer: <T>(dispose: Disposer<T>, instance: T) => void | Promise<void>) {}
+
   track<T>(token: AnyToken<T>, instance: T, dispose: Disposer<T>): void {
     this.items.push({ token, instance, dispose });
   }
@@ -40,7 +42,7 @@ export class DisposableRegistry {
 
     for (const item of toDispose.reverse()) {
       try {
-        await item.dispose(item.instance);
+        await this.runDisposer(item.dispose, item.instance);
       } catch (error) {
         onError(error);
       }

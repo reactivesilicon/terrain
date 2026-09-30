@@ -17,3 +17,9 @@ export function random(): number {
   randomState = (Math.imul(randomState, MULTIPLIER) + INCREMENT) >>> 0;
   return randomState / 2 ** 32;
 }
+
+export function createGate(): { opened: Promise<void>; open: () => void } {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => (open = resolve));
+  return { opened, open };
+}

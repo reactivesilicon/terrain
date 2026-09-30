@@ -351,7 +351,20 @@ type Disposer<T> = (instance: T) => void | Promise<void>;
 await app.dispose();
 ```
 
-Disposal runs in **reverse creation order**, so dependents are torn down before their dependencies. Disposing the container cascades to all of its scopes. `dispose()` is idempotent. If multiple disposers fail, the container throws an `AggregateError`.
+Disposal runs in **reverse creation order**, so dependents are torn down before their dependencies. Disposing the container cascades to all of its scopes, waiting for any scope that is already mid-disposal. `dispose()` is idempotent: repeated and concurrent calls all settle once teardown has finished. If disposers fail, the call that started the disposal rejects with an `AggregateError` (for a scope reached by the container's cascade, that is the container's `dispose()`); every other call just waits for teardown.
+
+A disposer may call `dispose()` on its own container or scope, or on an ancestor: the call returns at once and teardown carries on, since the disposer is part of the teardown it would otherwise wait for. If that container wasn't disposing yet (a scope's disposer shutting down the app), the call starts its disposal; nobody can await that outcome, so its failures go to `onDisposeError`. This covers anything the disposer does while it is still running, including after an `await` or in an event listener it fires. Once the disposer has finished, code it left behind (a timer, say) is an outside caller and waits for teardown like one:
+
+```ts
+m.single("server", () => startServer(), {
+  dispose: async (server): Promise<void> => {
+    await server.close();
+    await app.dispose(); // returns at once; the app's teardown continues
+  },
+});
+```
+
+The same holds between disposers: a disposer's `dispose()` call never waits on a disposal that is itself waiting on that disposer, so disposers that dispose each other's scopes, or each other's apps, can't deadlock. The one thing a disposer can't do is wait for something other than `dispose()` that only happens _after_ teardown finishes; that waits on itself.
 
 ## Testing with overrides
 
@@ -422,6 +435,7 @@ Throws `CaptiveDependencyError` on resolution.
 
 ## Known limitations
 
+- **Server-side only.** terrain needs a server runtime (Node.js ≥ 22, Bun, Deno); importing it into a browser bundle fails at build time on `node:async_hooks`.
 - **Composition is static.** `createContainer` builds a fixed graph; there is no runtime unload or hot-swap of a composed container. Build a fresh container instead (this is also the testing model — a new container per test).
 - **Go-to-definition on resolver namespace accessors (`r.Infra.logger`) lands on a mapped type**, not the provider. This is inherent to computed accessor types.
 - **The chain is the contract.** Imperative registration on a captured builder runs at runtime but is invisible to the types — keep `setup` a single returned chain.
@@ -518,7 +532,7 @@ const app = createContainer({
 });
 ```
 
-`options.onDisposeError` observes disposal failures for orphaned in-flight instances only: a resolution that finishes after the view is disposed immediately, and failures from that orphan disposal are reported to the hook. Normal `dispose()` failures are not reported there; `dispose()` still rejects with an `AggregateError`.
+`options.onDisposeError` observes disposal failures that no caller can receive: an orphaned in-flight instance (a resolution that finishes after the view is disposed immediately), and a disposal started by a disposer's own `dispose()` call. Without a hook, these failures are printed with `console.error` rather than lost (and rather than thrown, so one failed cleanup can't crash the process). Normal `dispose()` failures are not reported there; `dispose()` still rejects with an `AggregateError`.
 
 The returned view exposes one namespace per exposed module, plus:
 

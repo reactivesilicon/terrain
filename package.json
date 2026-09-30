@@ -9,6 +9,7 @@
     "ioc",
     "modules",
     "scopes",
+    "server",
     "typescript"
   ],
   "homepage": "https://github.com/reactivesilicon/terrain#readme",
@@ -67,7 +68,7 @@
     "vitest": "^4.1.9"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "packageManager": "bun@1.3.14"
 }

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DIError, DisposedContainerError, InvalidEntryNameError, InvalidModuleNameError } from "../../src";
 import { createContainer, createModule } from "../../src";
 import { RESERVED_MODULE_NAMES } from "../../src/validations/name-validations";
-import { delay } from "../helpers";
+import { createGate, delay } from "../helpers";
 
 interface Logger {
   log(msg: string): string;
@@ -170,6 +170,98 @@ describe("named modules (spike)", () => {
     expect(request.Mod.ctx()).toBe(requestCtx); // request scope unaffected
     await request.dispose();
     await app.dispose();
+  });
+
+  it("concurrent callback scopes each complete and dispose", async () => {
+    let disposed = 0;
+    const Mod = createModule("Mod", (m) =>
+      m.scoped("ctx", () => ({}), {
+        dispose: async () => {
+          await delay(5);
+          disposed += 1;
+        },
+      }),
+    );
+    const app = createContainer({ parts: [Mod] });
+
+    const requests = Array.from({ length: 5 }, (_, i) =>
+      app.scope(async (req) => {
+        req.Mod.ctx();
+        await delay(1);
+        return i;
+      }),
+    );
+
+    expect(await Promise.all(requests)).toEqual([0, 1, 2, 3, 4]);
+    expect(disposed).toBe(5);
+    await app.dispose();
+  });
+
+  it("app.dispose() during a request scope's teardown waits for it, then disposes the app", async () => {
+    const events: string[] = [];
+    const txDisposerGate = createGate();
+    const Mod = createModule("Mod", (m) =>
+      m
+        .single("pool", () => ({}), { dispose: () => void events.push("pool disposed") })
+        .scoped("tx", (r) => (r.Mod.pool(), {}), {
+          dispose: async () => {
+            await txDisposerGate.opened;
+            events.push("tx disposed");
+          },
+        }),
+    );
+    const app = createContainer({ parts: [Mod] });
+
+    const request = app.scope(async (req) => (req.Mod.tx(), "handled"));
+    await delay(0); // the request body is done; its scope is now disposing
+    const shutdown = app.dispose();
+    txDisposerGate.open();
+
+    await expect(request).resolves.toBe("handled");
+    await shutdown;
+    expect(events).toEqual(["tx disposed", "pool disposed"]);
+  });
+
+  it("a disposer that shuts down its own app does not hang disposal", async () => {
+    class Lifecycle {
+      stopped = false;
+      constructor(private readonly stopApp: () => Promise<void>) {}
+      async shutdown(): Promise<void> {
+        await this.stopApp();
+        this.stopped = true;
+      }
+    }
+    const Infra = createModule("Infra", (m) =>
+      m.single("lifecycle", () => new Lifecycle((): Promise<void> => app.dispose()), {
+        dispose: (lifecycle) => lifecycle.shutdown(),
+      }),
+    );
+    const app = createContainer({ parts: [Infra] });
+    const lifecycle = app.Infra.lifecycle();
+
+    await app.dispose();
+    expect(lifecycle.stopped).toBe(true);
+  });
+
+  it("a request-scope disposer that disposes the app, after an await, shuts it down without hanging", async () => {
+    const events: string[] = [];
+    const Mod = createModule("Mod", (m) =>
+      m
+        .single("pool", () => ({}), { dispose: () => void events.push("pool disposed") })
+        .scoped("tx", () => ({}), {
+          dispose: async (): Promise<void> => {
+            await Promise.resolve();
+            await app.dispose();
+            events.push("tx disposed");
+          },
+        }),
+    );
+    const app = createContainer({ parts: [Mod] });
+    app.Mod.pool();
+
+    await app.scope((req) => void req.Mod.tx());
+    await app.dispose();
+    expect(events).toEqual(["tx disposed", "pool disposed"]);
   });
 
   it("two versions of a same-named module coexist when used by different importers", () => {

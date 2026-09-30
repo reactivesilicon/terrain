@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import { type Accessors, type AccessorSpec, createAccessors } from "../accessors";
 import {
   AsyncProviderError,
@@ -8,7 +10,6 @@ import {
   DisposedContainerError,
   DuplicateDefinitionError,
   isFrameworkError,
-  LifecycleOperationError,
   MissingDependencyError,
   ModuleOwnershipError,
   ProviderExecutionError,
@@ -33,9 +34,19 @@ import {
 import { flattenErrors, tokenName } from "../utils";
 import { DependencyGraph } from "./dependency-graph";
 import { DisposableRegistry } from "./disposable-registry";
+import { LifecycleLock } from "./lifecycle-lock";
 import { InstanceKinds, ResolutionCache } from "./resolution-cache";
 import type { ResolutionHost } from "./resolution-host";
 import { WaitForGraph, type WaitForGraphHost } from "./wait-for-graph";
+
+interface DisposerRun {
+  readonly container: Container;
+  readonly disposalsBeingAwaited: Set<Container>;
+}
+
+// Carried across awaits, event listeners, and callbacks, so dispose() can tell a
+// disposer's own call from an unrelated caller's.
+const currentDisposerRun = new AsyncLocalStorage<DisposerRun>();
 
 interface ResolvedDefinition<T> {
   definition: Definition<T>;
@@ -51,22 +62,26 @@ export class Container implements ResolutionHost, WaitForGraphHost {
 
   private readonly resolutionCache = new ResolutionCache(this);
 
-  private readonly disposables = new DisposableRegistry();
+  private readonly disposables = new DisposableRegistry((dispose, instance) => this.runDisposer(dispose, instance));
 
   private children = new Set<Container>();
-  private disposed = false;
+
+  // Present from the moment disposal starts; its presence is what marks this
+  // subtree disposed.
+  private disposal: Promise<void> | undefined;
 
   // Tokens currently being unloaded on THIS container. While present, the
   // token is treated as undefined by findOwner so in-flight providers cannot
   // re-resolve (and re-cache) it mid-unload.
   private unloading = new Set<AnyToken<any>>();
 
-  // Guards against interleaved lifecycle ops. The flag lives on every node but
-  // is only ever set/read on the tree ROOT, so a single lifecycle operation is
-  // exclusive across the entire container tree.
-  private lifecycleBusy = false;
+  // Every node carries one, but only the ROOT's is used, so coordination spans
+  // the entire container tree.
+  private readonly lifecycleLock = new LifecycleLock();
 
-  // Like the lifecycle flag: every node carries one, only the ROOT's is used.
+  private readonly unfinishedDisposerRuns = new Set<DisposerRun>();
+
+  // Like the lifecycle lock: every node carries one, only the ROOT's is used.
   private readonly dependencyGraph = new DependencyGraph();
 
   /**
@@ -88,24 +103,43 @@ export class Container implements ResolutionHost, WaitForGraphHost {
     this.disposables.track(token, instance, dispose);
   }
 
+  // Every user disposer runs through here, so none escapes the context. A run
+  // is finished once the disposer returns, throws, or its promise settles: from
+  // then on teardown no longer waits on it, so waiting on teardown is safe. A
+  // non-native thenable (outside the Disposer type) is still awaited by
+  // teardown, but counts as finished at once.
+  runDisposer<T>(dispose: Disposer<T>, instance: T): void | Promise<void> {
+    const disposerRun: DisposerRun = { container: this, disposalsBeingAwaited: new Set() };
+    this.unfinishedDisposerRuns.add(disposerRun);
+    const markFinished = (): void => {
+      this.unfinishedDisposerRuns.delete(disposerRun);
+    };
+    let result: void | Promise<void>;
+    try {
+      result = currentDisposerRun.run(disposerRun, () => dispose(instance));
+    } catch (error) {
+      markFinished();
+      throw error;
+    }
+    if (result instanceof Promise) return result.finally(markFinished);
+    markFinished();
+    return result;
+  }
+
   invokeProviderAsync<T>(definition: AsyncDefinition<T>, chain: ResolutionFrame[]): Promise<T> {
     return this.invokeProvider(definition, chain);
   }
 
   private root(): Container {
-    let current: Container = this;
-    while (current.parent) current = current.parent;
-    return current;
+    return this.parent ? this.parent.root() : this;
   }
 
-  // True if this container or any ancestor is disposed.
+  private isWithinSubtreeOf(container: Container): boolean {
+    return this === container || (this.parent?.isWithinSubtreeOf(container) ?? false);
+  }
+
   isTreeDisposed(): boolean {
-    let current: Container | undefined = this;
-    while (current) {
-      if (current.disposed) return true;
-      current = current.parent;
-    }
-    return false;
+    return this.disposal !== undefined || (this.parent?.isTreeDisposed() ?? false);
   }
 
   // Throws if this container OR any ancestor is disposed.
@@ -113,24 +147,17 @@ export class Container implements ResolutionHost, WaitForGraphHost {
     if (this.isTreeDisposed()) throw new DisposedContainerError();
   }
 
-  // Acquire the tree-wide lifecycle lock (coordinated on the root). Returns the
-  // root so the caller can release exactly what it acquired.
-  private beginTreeLifecycle(): Container {
-    const root = this.root();
+  private acquireStructuralChange(): LifecycleLock {
     this.assertTreeUsable();
-    if (root.lifecycleBusy) throw new LifecycleOperationError();
-    root.lifecycleBusy = true;
-    return root;
-  }
-
-  private endTreeLifecycle(root: Container): void {
-    root.lifecycleBusy = false;
+    const lifecycleLock = this.root().lifecycleLock;
+    lifecycleLock.acquireStructuralChange();
+    return lifecycleLock;
   }
 
   // ── Module management ─────────────────────────────────────────────────
 
   load(module: Module, options: LoadOptions = {}): void {
-    const lock = this.beginTreeLifecycle();
+    const lifecycleLock = this.acquireStructuralChange();
     try {
       const entries = [...module.entries()];
 
@@ -158,7 +185,7 @@ export class Container implements ResolutionHost, WaitForGraphHost {
         if (replacesExistingDefinition) this.purgeDependencyEdges(token);
       }
     } finally {
-      this.endTreeLifecycle(lock);
+      lifecycleLock.releaseStructuralChange();
     }
   }
 
@@ -168,7 +195,7 @@ export class Container implements ResolutionHost, WaitForGraphHost {
   // throw AggregateError if any disposal failed. Never leaves a half-unloaded
   // state, and never re-caches an evicted token.
   async unload(module: Module): Promise<void> {
-    const lock = this.beginTreeLifecycle();
+    const lifecycleLock = this.acquireStructuralChange();
     try {
       const tokens = [...module.keys()];
 
@@ -210,7 +237,7 @@ export class Container implements ResolutionHost, WaitForGraphHost {
         for (const token of tokens) this.unmarkUnloadingDeep(token);
       }
     } finally {
-      this.endTreeLifecycle(lock);
+      lifecycleLock.releaseStructuralChange();
     }
   }
 
@@ -360,8 +387,8 @@ export class Container implements ResolutionHost, WaitForGraphHost {
         // .then(), not Promise.resolve(dispose(...)): a synchronously-throwing
         // disposer must land in the catch, not escape into the caller.
         void Promise.resolve()
-          .then(() => dispose(instance))
-          .catch((e) => this.notifyDisposeError(e));
+          .then(() => this.runDisposer(dispose, instance))
+          .catch((e) => this.reportUnreceivableDisposalFailure(e));
       }
       throw new DisposedContainerError();
     }
@@ -404,11 +431,18 @@ export class Container implements ResolutionHost, WaitForGraphHost {
     }
   }
 
-  // Reporting hook is observational only: it must never alter lifecycle
-  // behavior, so a throwing hook is swallowed.
-  notifyDisposeError(error: unknown): void {
+  // Reporting is observational only: it must never alter lifecycle behavior,
+  // so a throwing hook is swallowed.
+  // Without a hook the failure is printed rather than lost, and rather than
+  // thrown: an unhandled rejection would crash the process over one cleanup.
+  reportUnreceivableDisposalFailure(error: unknown): void {
+    const { onDisposeError } = this.options;
+    if (!onDisposeError) {
+      console.error(error);
+      return;
+    }
     try {
-      this.options.onDisposeError?.(error);
+      onDisposeError(error);
     } catch {
       /* hooks are observational */
     }
@@ -464,7 +498,7 @@ export class Container implements ResolutionHost, WaitForGraphHost {
     // Never resolve through a disposed container (defensive: also covers a
     // child left alive past an ancestor's disposal by some future bug).
     /* v8 ignore next -- unreachable: assertTreeUsable runs before every findOwner. */
-    if (this.disposed) return undefined;
+    if (this.disposal) return undefined;
     const localDefinition = this.definitions.get(token);
     if (localDefinition) {
       // A token mid-unload is treated as absent so an in-flight provider that
@@ -583,32 +617,100 @@ export class Container implements ResolutionHost, WaitForGraphHost {
 
   // ── Disposal ──────────────────────────────────────────────────────────
 
-  async dispose(): Promise<void> {
-    if (this.disposed) return;
-    // Acquire the tree-wide lock so dispose can't interleave with a load/unload
-    // anywhere in the tree. Cascade disposal uses disposeInternal (no re-lock).
-    const lock = this.beginTreeLifecycle();
-    try {
-      /* v8 ignore next -- unreachable: nothing can interleave between the entry
-         check and the (synchronous) lock acquisition. Guards future refactors. */
-      if (this.disposed) return; // re-check under lock
-      await this.disposeInternal();
-    } finally {
-      this.endTreeLifecycle(lock);
+  // Repeated and concurrent calls join the one disposal, so every caller
+  // settles only once teardown has actually finished — except a call from a
+  // still-running disposer that this disposal is (transitively) waiting on: it
+  // would be waiting on itself, so it returns at once.
+  dispose(): Promise<void> {
+    const callingRun = Container.currentUnfinishedDisposerRun();
+    const waitingWouldDeadlock = callingRun !== undefined && this.disposalWouldWaitOn(callingRun.container);
+    if (this.disposal) {
+      return waitingWouldDeadlock
+        ? Promise.resolve()
+        : this.recordedAsAwaitedBy(callingRun, Container.joinDisposal(this.disposal));
     }
+    const lifecycleLock = this.root().lifecycleLock;
+    try {
+      lifecycleLock.acquireDisposal();
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    const disposal = this.startDisposal(() => lifecycleLock.releaseDisposal());
+    if (!waitingWouldDeadlock) return this.recordedAsAwaitedBy(callingRun, disposal);
+    disposal.catch((error: unknown) => this.reportUnreceivableDisposalFailure(error));
+    return Promise.resolve();
   }
 
-  private async disposeInternal(): Promise<void> {
-    /* v8 ignore next -- unreachable: a disposed child removes itself from its
-       parent's children, so the cascade never revisits one. Guards future refactors. */
-    if (this.disposed) return;
-    this.disposed = true;
+  private static currentUnfinishedDisposerRun(): DisposerRun | undefined {
+    const run = currentDisposerRun.getStore();
+    return run && run.container.unfinishedDisposerRuns.has(run) ? run : undefined;
+  }
 
+  // Would this disposal (transitively) wait on `waiter`'s disposal? A disposal
+  // waits on every container in its subtree, and on whatever disposals the
+  // unfinished disposers in that subtree are themselves waiting on.
+  private disposalWouldWaitOn(waiter: Container): boolean {
+    const visitedContainers = new Set<Container>();
+    const containersToVisit: Container[] = [this];
+    while (containersToVisit.length > 0) {
+      const nextContainer = containersToVisit.pop()!;
+      if (visitedContainers.has(nextContainer)) continue;
+      visitedContainers.add(nextContainer);
+      if (waiter.isWithinSubtreeOf(nextContainer)) return true;
+      for (const awaitedContainer of nextContainer.disposalsAwaitedWithinSubtree()) {
+        containersToVisit.push(awaitedContainer);
+      }
+    }
+    return false;
+  }
+
+  private *disposalsAwaitedWithinSubtree(): Generator<Container> {
+    for (const run of this.unfinishedDisposerRuns) yield* run.disposalsBeingAwaited;
+    for (const child of this.children) yield* child.disposalsAwaitedWithinSubtree();
+  }
+
+  // Recorded while pending, so a disposer on the other side of a cycle sees it.
+  private recordedAsAwaitedBy(callingRun: DisposerRun | undefined, disposal: Promise<void>): Promise<void> {
+    if (!callingRun) return disposal;
+    callingRun.disposalsBeingAwaited.add(this);
+    const stopAwaiting = (): void => void callingRun.disposalsBeingAwaited.delete(this);
+    void disposal.then(stopAwaiting, stopAwaiting);
+    return disposal;
+  }
+
+  // A disposal's failure is reported once, to whoever started it: a joiner
+  // only waits for teardown to finish.
+  private static joinDisposal(disposal: Promise<void>): Promise<void> {
+    return disposal.then(
+      () => {},
+      () => {},
+    );
+  }
+
+  // `onSettled` is part of the shared promise, so a caller that joins this
+  // disposal settles only after the lock is released, too.
+  private startDisposal(onSettled?: () => void): Promise<void> {
+    // Teardown is deferred one microtask so `disposal` is recorded before any
+    // teardown step runs, including the synchronous start of a child's cascade.
+    this.disposal = Promise.resolve()
+      .then(() => this.tearDown())
+      .finally(onSettled);
+    return this.disposal;
+  }
+
+  private async tearDown(): Promise<void> {
     const errors: unknown[] = [];
 
+    // A child already disposing on its own is joined, not skipped, so its
+    // dependents finish tearing down before this container's dependencies. A
+    // child that finished earlier has already left `children`.
     for (const child of this.children) {
+      if (child.disposal) {
+        await Container.joinDisposal(child.disposal);
+        continue;
+      }
       try {
-        await child.disposeInternal();
+        await child.startDisposal();
       } catch (error) {
         errors.push(error);
       }
