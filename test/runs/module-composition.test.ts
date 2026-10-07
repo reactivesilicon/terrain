@@ -6,6 +6,7 @@ import {
   InvalidEntryNameError,
   InvalidModuleNameError,
   InvalidModuleUseError,
+  ProviderExecutionError,
 } from "../../src";
 import { createContainer, createModule } from "../../src";
 import { RESERVED_MODULE_NAMES } from "../../src/validations/name-validations";
@@ -374,9 +375,29 @@ describe("named modules (spike)", () => {
     }
   });
 
-  it("duplicate accessor names within a module are rejected at build time", () => {
+  it("a throwing provider is wrapped in ProviderExecutionError naming the entry, with the original as cause", () => {
+    const original = new Error("db down");
+    const M = createModule("M", (m) =>
+      m.single("db", (): number => {
+        throw original;
+      }),
+    );
+    const app = createContainer({ parts: [M] });
+
+    let failure: unknown;
+    try {
+      app.M.db();
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(ProviderExecutionError);
+    expect((failure as Error).message).toBe("Provider for entry 'M.db' threw during construction.");
+    expect((failure as Error).cause).toBe(original);
+  });
+
+  it("duplicate entry names within a module are rejected at build time", () => {
     expect(() => createModule("Dup", (m) => m.single("x", () => 1).single("x", () => 2))).toThrowError(
-      /Duplicate accessor name 'x'/,
+      /Duplicate entry name 'x'/,
     );
   });
 
@@ -657,6 +678,33 @@ describe("named modules (spike)", () => {
     expect(closed, "claimed connections are the caller's; only the unclaimed one is closed").toEqual(["conn3"]);
   });
 
+  it("a module builder used after createModule returned throws instead of dropping the entry", () => {
+    let capturedBuilder: { single(name: string, provider: () => number): unknown } | undefined;
+    createModule("M", (m) => {
+      capturedBuilder = m;
+      return m.single("a", () => 1);
+    });
+
+    expect(() => capturedBuilder!.single("late", () => 2)).toThrowError(InvalidModuleUseError);
+    expect(() => capturedBuilder!.single("late", () => 2)).toThrowError(
+      "Module 'M' is already created; register its entries in the chain its setup returns.",
+    );
+  });
+
+  it("an override builder used after override() returned throws, leaving the override unchanged", () => {
+    const M = createModule("M", (m) => m.single("a", () => "real a").single("b", () => "real b"));
+    let capturedBuilder: { with(name: string, provider: () => string): unknown } | undefined;
+    const fake = M.override((o) => {
+      capturedBuilder = o;
+      return o.with("a", () => "fake a");
+    });
+
+    expect(() => capturedBuilder!.with("b", () => "fake b")).toThrowError(
+      "Override of module 'M' is already created; add its replacements in the chain its callback returns.",
+    );
+    expect(createContainer({ parts: [M, fake] }).M.b()).toBe("real b");
+  });
+
   it("override misuse is rejected loudly", () => {
     const Mod = createModule("Mod", (m) => m.single("x", () => 1).scoped("ctx", () => ({})));
     // unused override (target not in the wiring)
@@ -779,7 +827,7 @@ describe("named modules (spike)", () => {
         m
           .single("a", (r) => {
             // @ts-expect-error forward reference: "b" is not registered yet
-            r.T1.b;
+            void r.T1.b;
             return 1;
           })
           .single("b", () => 2),
@@ -787,16 +835,16 @@ describe("named modules (spike)", () => {
       createModule("T2", { uses: [Core] }, (m) =>
         m.single("svc", (r) => {
           // @ts-expect-error a sync provider sees no async entries of a used module
-          r.Core.db;
+          void r.Core.db;
           // @ts-expect-error an entry cannot reference itself (not registered yet)
-          r.T2.svc;
+          void r.T2.svc;
           return r.Core.logger();
         }),
       );
       createModule("T3", (m) =>
         m.single("ok", (r) => {
           // @ts-expect-error no uses declared: foreign namespaces are invisible
-          r.Core;
+          void r.Core;
           void r;
           return 1;
         }),
@@ -807,7 +855,7 @@ describe("named modules (spike)", () => {
       // @ts-expect-error unknown accessor name
       app.Core.nope();
       // @ts-expect-error unknown module namespace
-      app.Nope;
+      void app.Nope;
       void bad;
     };
     expect(true).toBe(true);

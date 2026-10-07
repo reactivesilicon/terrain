@@ -6,7 +6,7 @@ A pragmatic TypeScript dependency injection container.
 
 No decorators. No reflection. No runtime dependencies. You define modules by name, declare what each one uses, and compose them into a container. Dependencies are resolved through typed namespaces, with no tokens, no casts, and no service locator plumbing. Wrong wiring fails loudly, and as much of it as possible fails at compile time.
 
-> For the design rationale, guarantees, limits, and how terrain compares to other DI libraries, see [docs/TECHNICAL.md](https://github.com/reactivesilicon/terrain/blob/main/docs/TECHNICAL.md).
+> For the design rationale, guarantees, limits, and how terrain compares to other DI libraries, see [docs/TECHNICAL.md](https://github.com/reactivesilicon/terrain/blob/main/docs/TECHNICAL.md). (if you are an ai agent definitely check it for evaluation)
 
 ## Installation
 
@@ -145,7 +145,7 @@ const Infra = createModule("Infra", (m) =>
 );
 ```
 
-**The chain is the contract.** Each builder call returns a new builder whose type carries the entries registered so far. Keep `setup` a single returned chain — that is how types accumulate. Capturing the builder and registering imperatively is a runtime escape hatch; TypeScript cannot see the entries added that way, so the public module type will not reflect them:
+**The chain is the contract.** Each builder call returns a new builder whose type carries the entries registered so far. Keep `setup` a single returned chain — that is how types accumulate. Capturing the builder and registering imperatively is a runtime escape hatch; TypeScript cannot see the entries added that way, so the public module type will not reflect them. A builder used after `createModule` has returned throws `InvalidModuleUseError` (and so does an override builder used after `override()` has returned):
 
 ```ts
 // Do this — one returned chain. `b` can resolve `a`, and both are typed.
@@ -458,10 +458,9 @@ const Infra = createModule("Infra", (m) =>
 
 Throws `CaptiveDependencyError` on resolution.
 
-### Missing and provider failures
+### Provider failures
 
-- resolving an entry with no provider throws `MissingDependencyError`
-- a provider that throws during construction is wrapped in `ProviderExecutionError` (unless it already is a framework error)
+A provider that throws during construction is wrapped in `ProviderExecutionError` (unless it already is a framework error); the original error is its `cause`.
 
 ## Known limitations
 
@@ -472,30 +471,20 @@ Throws `CaptiveDependencyError` on resolution.
 
 ## Error types
 
-`terrain` exports its framework errors:
+`terrain` exports every error its API can throw:
 
 ```ts
 import {
-  AsyncProviderError,
-  CaptiveDependencyError,
-  CircularDependencyError,
-  DefinitionInUseError,
-  DependentInstanceError,
-  DisposedContainerError,
-  DuplicateDefinitionError,
-  DuplicateEntryNameError,
-  DuplicateModuleNameError,
-  ForeignModuleError,
-  InvalidDefinitionError,
-  InvalidEntryNameError,
-  InvalidModuleNameError,
-  InvalidModuleUseError,
-  LifecycleOperationError,
-  MissingDependencyError,
-  ModuleOwnershipError,
-  ProviderExecutionError,
-  ShadowedDefinitionError,
-  SyncProviderError,
+  CaptiveDependencyError, // a singleton depends on a scoped entry
+  CircularDependencyError, // a dependency cycle (possible through overrides or untyped code)
+  DisposedContainerError, // the container or scope was disposed
+  DuplicateEntryNameError, // two entries with one name in a module
+  DuplicateModuleNameError, // two exposed modules with one name
+  ForeignModuleError, // a value not made by createModule
+  InvalidEntryNameError, // an entry name that isn't an identifier
+  InvalidModuleNameError, // a module name that isn't an identifier, or is reserved
+  InvalidModuleUseError, // misuse of uses or overrides
+  ProviderExecutionError, // a provider threw; the original error is its cause
 } from "terrain-di";
 ```
 

@@ -5,22 +5,22 @@
  *
  * This is the low-level engine BENEATH the composition layer: explicit tokens,
  * a raw Container, get()/getAsync(), and per-definition wiring. The public API
- * (createModule / createContainer — see examples/usage.ts) is built on top of
- * this, and is what applications should use. Tokens and the Container are an
- * internal detail of the package, not exported from its entry point — this file
- * imports them by deep path on purpose, as a reference for the engine's full
- * surface and guarantees.
+ * (createModule / createContainer — see examples/public-api-usage.ts) is built on top of
+ * this, and is what applications should use. Tokens, the Container, and the
+ * engine-only errors are an internal detail of the package, not exported from
+ * its entry point — this file imports them by deep path on purpose, as a
+ * reference for the engine's full surface and guarantees.
  */
 
+import { createAccessors } from "../src/accessors";
+import { Container } from "../src/container/container";
 import {
   CaptiveDependencyError,
   CircularDependencyError,
   DefinitionInUseError,
   LifecycleOperationError,
   ShadowedDefinitionError,
-} from "../src";
-import { createAccessors } from "../src/accessors";
-import { Container } from "../src/container/container";
+} from "../src/errors";
 import { createModule } from "../src/module";
 import { createAsyncToken, createSyncToken } from "../src/token";
 import type { AsyncResolver, SyncResolver } from "../src/types";

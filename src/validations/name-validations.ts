@@ -1,4 +1,4 @@
-import { InvalidModuleNameError } from "../errors";
+import { InvalidModuleNameError, InvalidModuleUseError } from "../errors";
 import { RESERVED_MODULE_NAMES } from "./reserved-module-names";
 
 export { RESERVED_MODULE_NAMES };
@@ -15,5 +15,21 @@ export function isIdentifierName(name: string): boolean {
 export function assertModuleName(name: string): void {
   if (!isIdentifierName(name) || RESERVED_MODULE_NAME_SET.has(name)) {
     throw new InvalidModuleNameError(name);
+  }
+}
+
+/** Resolver namespaces are keyed by module name: a module's own name and the
+ *  names of everything it uses must be pairwise distinct, or one namespace
+ *  would silently shadow another. */
+export function assertNoNamespaceCollisions(moduleName: string, uses: readonly { readonly name: string }[]): void {
+  const seenNames = new Set<string>();
+  for (const used of uses) {
+    if (used.name === moduleName) {
+      throw new InvalidModuleUseError(`Module '${moduleName}' cannot use a module bearing its own name.`);
+    }
+    if (seenNames.has(used.name)) {
+      throw new InvalidModuleUseError(`Duplicate used module name '${used.name}' in module '${moduleName}'.`);
+    }
+    seenNames.add(used.name);
   }
 }

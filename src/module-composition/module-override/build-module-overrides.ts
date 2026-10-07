@@ -29,6 +29,7 @@ export function buildModuleOverride<ModuleName extends ComposedModuleName, Modul
   ) => OverrideBuilder<ModuleName, ModuleEntries>,
 ): ModuleOverride<ModuleName> {
   const replacementsByEntryName = new Map<ModuleEntryName, ModuleEntryDefinitionWithToken>();
+  let sealed = false;
 
   function assertEntryCanBeReplaced(
     entryName: ModuleEntryName,
@@ -45,6 +46,11 @@ export function buildModuleOverride<ModuleName extends ComposedModuleName, Modul
     expectedMode: TokenMode,
     options?: ErasedDefinitionOptions,
   ): ModuleEntryDefinitionWithToken {
+    if (sealed) {
+      throw new InvalidModuleUseError(
+        `Override of module '${moduleName}' is already created; add its replacements in the chain its callback returns.`,
+      );
+    }
     const original = entryDefinitionsByEntryName.get(entryName);
     if (!original) {
       throw new InvalidModuleUseError(`Override targets unknown entry '${entryName}' in module '${moduleName}'.`);
@@ -104,6 +110,7 @@ export function buildModuleOverride<ModuleName extends ComposedModuleName, Modul
   // is not structurally assignable to it. Irreducible; pinned by
   // test/runs/types.test.ts.
   defineOverride(overrideBuilder as any);
+  sealed = true;
   if (replacementsByEntryName.size === 0) {
     throw new InvalidModuleUseError(`Override of module '${moduleName}' replaces nothing.`);
   }

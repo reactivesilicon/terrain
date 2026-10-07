@@ -92,7 +92,7 @@ export class ModuleOwnershipError extends DIError {
 export class ProviderExecutionError extends DIError {
   override readonly cause: unknown;
   constructor(name: string, cause: unknown) {
-    super(`Provider for token '${name}' threw during construction.`);
+    super(`Provider for entry '${name}' threw during construction.`);
     this.name = "ProviderExecutionError";
     this.cause = cause;
   }
@@ -140,7 +140,7 @@ export class InvalidEntryNameError extends DIError {
 
 export class DuplicateEntryNameError extends DIError {
   constructor(entry: string, module: string) {
-    super(`Duplicate accessor name '${entry}' in module '${module}'.`);
+    super(`Duplicate entry name '${entry}' in module '${module}'.`);
     this.name = "DuplicateEntryNameError";
   }
 }

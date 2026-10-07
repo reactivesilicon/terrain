@@ -1,4 +1,4 @@
-import { DuplicateEntryNameError, InvalidEntryNameError } from "../errors";
+import { DuplicateEntryNameError, InvalidEntryNameError, InvalidModuleUseError } from "../errors";
 import type { Simplify } from "../kernel/types";
 import { type AsyncToken, createAsyncToken, createSyncToken, type Token, TokenModes } from "../token";
 import type { FactoryDefinitionOptions, Lifetime, ScopedDefinitionOptions, SingletonDefinitionOptions } from "../types";
@@ -30,9 +30,6 @@ export type AsyncModuleEntryProvider<
 > = (
   resolver: AsyncProviderResolver<ModuleName, readonly [], Omit<ModuleEntries, EntryName>>,
 ) => Promise<EntryValueOf<ModuleEntries, EntryName>>;
-// export type SyncModuleEntryProvider = (resolverNamespaces: ResolverNamespacesValue) => unknown;
-// export type AsyncModuleEntryProvider = (resolverNamespaces: ResolverNamespacesValue) => Promise<unknown>;
-// export type ModuleEntryProvider = SyncModuleEntryProvider | AsyncModuleEntryProvider;
 
 export type ErasedDefinitionOptions = SingletonDefinitionOptions<unknown> &
   ScopedDefinitionOptions<unknown> &
@@ -44,12 +41,11 @@ type BaseModuleEntryDefinition = {
   options: ErasedDefinitionOptions | undefined;
 };
 
-// TODO: find better name
-type SyncProvision = {
+type ErasedSyncProvider = {
   mode: typeof TokenModes.Sync;
   provider: (resolverNamespaces: ResolverNamespacesValue) => unknown;
 };
-type AsyncProvision = {
+type ErasedAsyncProvider = {
   mode: typeof TokenModes.Async;
   provider: (resolverNamespaces: ResolverNamespacesValue) => Promise<unknown>;
 };
@@ -85,26 +81,33 @@ export function eraseAsyncEntryProvider<
 }
 
 export type ModuleEntryDefinition =
-  | Simplify<BaseModuleEntryDefinition & SyncProvision>
-  | Simplify<BaseModuleEntryDefinition & AsyncProvision>;
+  | Simplify<BaseModuleEntryDefinition & ErasedSyncProvider>
+  | Simplify<BaseModuleEntryDefinition & ErasedAsyncProvider>;
 
 export type SyncModuleEntryDefinitionWithToken = Simplify<
-  BaseModuleEntryDefinition & SyncProvision & { token: Token<unknown> }
+  BaseModuleEntryDefinition & ErasedSyncProvider & { token: Token<unknown> }
 >;
 export type AsyncModuleEntryDefinitionWithToken = Simplify<
-  BaseModuleEntryDefinition & AsyncProvision & { token: AsyncToken<unknown> }
+  BaseModuleEntryDefinition & ErasedAsyncProvider & { token: AsyncToken<unknown> }
 >;
 export type ModuleEntryDefinitionWithToken = SyncModuleEntryDefinitionWithToken | AsyncModuleEntryDefinitionWithToken;
 
 export class ModuleEntryDefinitions {
   readonly #definitionsByEntryName = new Map<ModuleEntryName, ModuleEntryDefinition>();
   readonly #moduleName: string;
+  #sealed = false;
 
   constructor(moduleName: string) {
     this.#moduleName = moduleName;
   }
 
   register(definition: ModuleEntryDefinition): void {
+    if (this.#sealed) {
+      throw new InvalidModuleUseError(
+        `Module '${this.#moduleName}' is already created; register its entries in the chain its setup returns.`,
+      );
+    }
+
     if (!isIdentifierName(definition.entryName)) {
       throw new InvalidEntryNameError(definition.entryName, this.#moduleName);
     }
@@ -114,6 +117,10 @@ export class ModuleEntryDefinitions {
     }
 
     this.#definitionsByEntryName.set(definition.entryName, definition);
+  }
+
+  seal(): void {
+    this.#sealed = true;
   }
 
   registeredDefinitions(): IterableIterator<ModuleEntryDefinition> {

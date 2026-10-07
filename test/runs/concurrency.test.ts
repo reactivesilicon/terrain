@@ -2,9 +2,16 @@ import { EventEmitter } from "node:events";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { DisposedContainerError, LifecycleOperationError } from "../../src";
+import { DisposedContainerError } from "../../src";
 import { createGate, delay, ignore, random } from "../helpers";
-import { CircularDependencyError, Container, createModule, createAsyncToken, createSyncToken } from "../internal-api";
+import {
+  CircularDependencyError,
+  Container,
+  createAsyncToken,
+  createModule,
+  createSyncToken,
+  LifecycleOperationError,
+} from "../internal-api";
 
 describe("concurrency", () => {
   it("in-flight async singleton rejects and is disposed after dispose()", async () => {
