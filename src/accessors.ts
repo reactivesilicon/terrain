@@ -71,13 +71,13 @@ export class AccessorPrototype<Source extends SyncResolver> {
 }
 
 export function buildSyncAccessorPrototype(spec: SyncAccessorSpec): AccessorPrototype<SyncResolver> {
-  const resolversByName: Record<string, (source: SyncResolver) => unknown> = {};
+  const resolversByName: Record<string, (source: SyncResolver) => unknown> = Object.create(null);
   for (const [name, token] of Object.entries(spec)) resolversByName[name] = (source) => source.get(token);
   return new AccessorPrototype(resolversByName);
 }
 
 export function buildAccessorPrototype(spec: AccessorSpec): AccessorPrototype<AsyncResolver> {
-  const resolversByName: Record<string, (source: AsyncResolver) => unknown> = {};
+  const resolversByName: Record<string, (source: AsyncResolver) => unknown> = Object.create(null);
   for (const [name, token] of Object.entries(spec)) {
     resolversByName[name] = isAsyncToken(token) ? (source) => source.getAsync(token) : (source) => source.get(token);
   }

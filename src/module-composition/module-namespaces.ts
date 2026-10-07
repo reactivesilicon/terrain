@@ -16,8 +16,8 @@ import type { ComposedModuleInternals, NamespacePrototypes } from "./module-inte
 export function buildNamespacePrototypes(
   tokensByEntryName: ReadonlyMap<ModuleEntryName, AnyToken<unknown>>,
 ): NamespacePrototypes {
-  const allEntries: AccessorSpec = {};
-  const syncEntries: SyncAccessorSpec = {};
+  const allEntries: AccessorSpec = Object.create(null);
+  const syncEntries: SyncAccessorSpec = Object.create(null);
 
   for (const [entryName, token] of tokensByEntryName) {
     allEntries[entryName] = token;

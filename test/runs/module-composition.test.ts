@@ -453,6 +453,24 @@ describe("named modules (spike)", () => {
     expect(app.M.toString()).toBe("T");
   });
 
+  it("an entry named __proto__ is an ordinary entry on every path", async () => {
+    const M = createModule("M", (m) =>
+      m
+        .single("__proto__", () => 42)
+        .single("viaSyncResolver", (r) => r.M.__proto__() + 1)
+        .singleAsync("viaAsyncResolver", async (r) => r.M.__proto__() + 2),
+    );
+    const app = createContainer({ parts: [M] });
+
+    expect(app.M.__proto__()).toBe(42);
+    expect(app.M.viaSyncResolver()).toBe(43);
+    expect(await app.M.viaAsyncResolver()).toBe(44);
+    expect(app.scope().M.__proto__()).toBe(42);
+
+    const overridden = createContainer({ parts: [M, M.override((o) => o.with("__proto__", () => 7))] });
+    expect(overridden.M.viaSyncResolver()).toBe(8);
+  });
+
   it("a used module's entries are not re-exported by the importer", () => {
     const Core = createModule("Core", (m) => m.single("logger", (): Logger => ({ log: (s) => s })));
     const Data = createModule("Data", { uses: [Core] }, (m) => m.single("repo", () => ({})));
