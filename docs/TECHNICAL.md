@@ -160,7 +160,8 @@ Properties terrain enforces, beyond resolving values:
 - **Overrides:** derive a typed fake from a module (`Module.override`) and pass it to the
   container; it rewires every importer of the target without exposing a namespace.
   Entry names, value types, and sync/async mode are checked against the original, and each
-  entry can be replaced at most once per container.
+  entry can be replaced at most once per container. Only the lifetime is inherited, not
+  `dispose` or `eager`.
 - **Container options:** `createContainer({ options, parts })` accepts `onDisposeError`;
   scopes inherit it.
 - **Version diamonds:** two importers can depend on different module objects that share a

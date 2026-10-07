@@ -32,10 +32,13 @@ export type Disposer<T> = (instance: T) => void | Promise<void>;
 
 /** Per-definition registration options. */
 export interface DefinitionOptions<T> {
-  /** Called with the instance when its container/scope is disposed or its
-   *  module unloaded (cached lifetimes), or when an in-flight result is
-   *  orphaned by teardown. Without it the container never touches the
-   *  instance at teardown — there is no dispose() duck-typing. */
+  /** Singleton and scoped entries: called with the instance when its
+   *  container/scope is disposed.
+   *  Factories: instances belong to the caller and are never disposed by the
+   *  container; called only for an instance that finishes building after its
+   *  container started disposing, which nobody else could receive.
+   *  Without it the container never touches the instance at teardown — there
+   *  is no dispose() duck-typing. */
   dispose?: Disposer<T>;
 }
 

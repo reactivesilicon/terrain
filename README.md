@@ -351,6 +351,8 @@ type Disposer<T> = (instance: T) => void | Promise<void>;
 await app.dispose();
 ```
 
+**Factories are the exception.** A factory hands out a new instance on every call, and those instances belong to the caller: the container doesn't keep them, so it doesn't dispose them at teardown. A factory's `dispose` runs only for an instance that finishes building after its container started disposing. Nobody can receive that one, so terrain cleans it up.
+
 Disposal runs in **reverse creation order**, so dependents are torn down before their dependencies. Disposing the container cascades to all of its scopes, waiting for any scope that is already mid-disposal. `dispose()` is idempotent: repeated and concurrent calls all settle once teardown has finished. If disposers fail, the call that started the disposal rejects with an `AggregateError` (for a scope reached by the container's cascade, that is the container's `dispose()`); every other call just waits for teardown.
 
 A disposer may call `dispose()` on its own container or scope, or on an ancestor: the call returns at once and teardown carries on, since the disposer is part of the teardown it would otherwise wait for. If that container wasn't disposing yet (a scope's disposer shutting down the app), the call starts its disposal; nobody can await that outcome, so its failures go to `onDisposeError`. This covers anything the disposer does while it is still running, including after an `await` or in an event listener it fires. Once the disposer has finished, code it left behind (a timer, say) is an outside caller and waits for teardown like one:
@@ -381,7 +383,7 @@ const app = createContainer({ parts: [UseCases, FakeInfra] }); // real wiring + 
 app.UseCases.findUser().execute("1"); // runs against the fake logger
 ```
 
-Overrides are fully checked against the original: entry names, value types, and the sync/async mode must match (`with` for sync entries, `withAsync` for async). The lifetime is inherited from the original; `eager` in an override requires the original to be a singleton.
+Overrides are fully checked against the original: entry names, value types, and the sync/async mode must match (`with` for sync entries, `withAsync` for async). Only the lifetime carries over from the original. Its `dispose` and `eager` don't apply to the fake: pass them to `with`/`withAsync` if the fake needs them. Once overridden, the original is never built, and `start()` won't build the fake unless its override passes `eager: true` too. (`eager` in an override requires the original to be a singleton.)
 
 An override applies to **every** importer of the target module — overriding `Infra` affects `Data`, `Domain`, `UseCases`, or any other consumer in the graph. That's the point: you fake one thing and the whole graph picks it up. Overriding works on transitive, unexposed modules as well. An override whose target isn't part of the container's wiring is rejected (`InvalidModuleUseError`).
 
@@ -524,7 +526,7 @@ m.scoped(name, provider, options?);       // options: { dispose? }
 m.scopedAsync(name, provider, options?);  // options: { dispose? }
 ```
 
-`dispose: (instance: T) => void | Promise<void>` registers teardown; `eager: true` (singletons only) marks the entry for `start()`.
+`dispose: (instance: T) => void | Promise<void>` registers teardown for singleton and scoped entries; for factories it only cleans up an instance that finishes building after its container started disposing (see [Disposal](#disposal)). `eager: true` (singletons only) marks the entry for `start()`.
 
 Sync methods (`single`, `factory`, `scoped`) receive a resolver with only sync entries. Async methods (`singleAsync`, `factoryAsync`, `scopedAsync`) receive a resolver with both sync and async entries. Accessors mirror the mode: sync entries are `() => T`; async entries are `() => Promise<T>`.
 
@@ -564,11 +566,14 @@ A `ScopeView` is the same shape minus `start()` — namespaces, `scope` (scopes 
 
 ```ts
 const fake = SomeModule.override((o) =>
-  o.with(entryName, provider, options?).withAsync(entryName, provider, options?),
+  o
+    .with(entryName, provider, options?) //      options: { dispose?, eager? }
+    .withAsync(entryName, provider, options?), // options: { dispose?, eager? }
 );
+// eager requires the original to be a singleton
 ```
 
-Replaces entries of the module it was derived from. `with` targets sync entries, `withAsync` async ones; entry names, value types, and modes are checked against the original. Lifetime is inherited. Pass the result into `createContainer`.
+Replaces entries of the module it was derived from. `with` targets sync entries, `withAsync` async ones; entry names, value types, and modes are checked against the original. Only the lifetime is inherited; `dispose` and `eager` come from the override's own options. Pass the result into `createContainer`.
 
 An override must replace at least one entry, and duplicate replacements are rejected, both within one override and across the overrides passed to one `createContainer`.
 

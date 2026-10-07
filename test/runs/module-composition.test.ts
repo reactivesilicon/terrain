@@ -579,6 +579,34 @@ describe("named modules (spike)", () => {
     expect(events).toEqual(["fake-connect", "fake-closed"]);
   });
 
+  it("an override inherits only the lifetime: the original's eager and dispose don't apply to the fake", async () => {
+    const events: string[] = [];
+    const Infra = createModule("Infra", (m) =>
+      m.singleAsync(
+        "db",
+        async (): Promise<Db> => {
+          events.push("real-connect");
+          return { ping: () => "real" };
+        },
+        { eager: true, dispose: () => void events.push("real-closed") },
+      ),
+    );
+    const FakeInfra = Infra.override((o) =>
+      o.withAsync("db", async (): Promise<Db> => {
+        events.push("fake-connect");
+        return { ping: () => "fake" };
+      }),
+    );
+    const app = createContainer({ parts: [Infra, FakeInfra] });
+
+    await app.start();
+    expect(events, "start() builds nothing: the fake isn't eager").toEqual([]);
+    expect((await app.Infra.db()).ping()).toBe("fake");
+    expect(events, "the fake is built on first use").toEqual(["fake-connect"]);
+    await app.dispose();
+    expect(events, "the original's disposer never runs on the fake").toEqual(["fake-connect"]);
+  });
+
   it("override keeps the original lifetime: a scoped entry stays scoped", async () => {
     const Mod = createModule("Mod", (m) => m.scoped("ctx", () => ({ kind: "real" })));
     const Fake = Mod.override((o) => o.with("ctx", () => ({ kind: "fake" })));
