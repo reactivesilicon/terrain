@@ -1,7 +1,8 @@
 import { InvalidModuleUseError } from "../../errors";
 import { createModule as createKernelModule, type Module } from "../../module";
-import { type TokenMode, TokenModes } from "../../token";
+import { type AnyToken, type TokenMode, TokenModes } from "../../token";
 import { Lifetimes, type SingletonDefinitionOptions } from "../../types";
+import { tokenName } from "../../utils";
 import { toKernelDefinition } from "../kernel-definition-transformer";
 import {
   type AsyncModuleEntryDefinitionWithToken,
@@ -109,6 +110,22 @@ export function buildModuleOverride<ModuleName extends ComposedModuleName, Modul
   const override = createModuleOverride(moduleName);
   storeOverrideInternals(override, { targetModule: moduleInternals, replacementsByEntryName });
   return override;
+}
+
+// Two overrides replacing one entry have no right answer: load order would pick
+// one silently.
+export function assertNoEntryReplacedTwice(overrides: readonly OverrideInternals[]): void {
+  const replacedTokens = new Set<AnyToken<unknown>>();
+  for (const { replacementsByEntryName } of overrides) {
+    for (const { token } of replacementsByEntryName.values()) {
+      if (replacedTokens.has(token)) {
+        throw new InvalidModuleUseError(
+          `Entry '${tokenName(token)}' is replaced by more than one override in this container.`,
+        );
+      }
+      replacedTokens.add(token);
+    }
+  }
 }
 
 export function buildOverrideKernelModule(override: OverrideInternals): Module {

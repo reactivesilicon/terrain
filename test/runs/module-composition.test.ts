@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { DIError, DisposedContainerError, InvalidEntryNameError, InvalidModuleNameError } from "../../src";
+import {
+  DIError,
+  DisposedContainerError,
+  InvalidEntryNameError,
+  InvalidModuleNameError,
+  InvalidModuleUseError,
+} from "../../src";
 import { createContainer, createModule } from "../../src";
 import { RESERVED_MODULE_NAMES } from "../../src/validations/name-validations";
 import { createGate, delay } from "../helpers";
@@ -617,6 +623,54 @@ describe("named modules (spike)", () => {
     expect(() => Mod.override((o) => o.withAsync("x" as never, (async () => 1) as never))).toThrowError(
       /is sync; use the matching override method/,
     );
+  });
+
+  it("an entry replaced by more than one override in a container is rejected, in either order", () => {
+    const Infra = createModule("Infra", (m) =>
+      m.single("logger", () => "real logger").single("clock", () => "real clock"),
+    );
+    const fakeA = Infra.override((o) => o.with("logger", () => "fake A"));
+    const fakeB = Infra.override((o) => o.with("logger", () => "fake B"));
+    const fakeLoggerAndClock = Infra.override((o) => o.with("logger", () => "fake").with("clock", () => "fake"));
+    const fakeClock = Infra.override((o) => o.with("clock", () => "fake clock"));
+    const expectDuplicateReplacement = (createApp: () => unknown, entry: string) => {
+      expect(createApp).toThrowError(InvalidModuleUseError);
+      expect(createApp).toThrowError(`Entry '${entry}' is replaced by more than one override`);
+    };
+
+    expectDuplicateReplacement(() => createContainer({ parts: [Infra, fakeA, fakeB] }), "Infra.logger");
+    expectDuplicateReplacement(() => createContainer({ parts: [Infra, fakeB, fakeA] }), "Infra.logger");
+    expectDuplicateReplacement(() => createContainer({ parts: [Infra, fakeA, fakeA] }), "Infra.logger");
+    // compared per entry, not per override: only `clock` overlaps here
+    expectDuplicateReplacement(() => createContainer({ parts: [Infra, fakeLoggerAndClock, fakeClock] }), "Infra.clock");
+  });
+
+  it("overrides of different entries of one module combine", () => {
+    const Infra = createModule("Infra", (m) =>
+      m.single("logger", () => "real logger").single("clock", () => "real clock"),
+    );
+    const fakeLogger = Infra.override((o) => o.with("logger", () => "fake logger"));
+    const fakeClock = Infra.override((o) => o.with("clock", () => "fake clock"));
+
+    const app = createContainer({ parts: [Infra, fakeLogger, fakeClock] });
+    expect([app.Infra.logger(), app.Infra.clock()]).toEqual(["fake logger", "fake clock"]);
+  });
+
+  it("overrides of two same-named module versions don't collide", () => {
+    const CoreV1 = createModule("Core", (m) => m.single("version", () => "v1"));
+    const CoreV2 = createModule("Core", (m) => m.single("version", () => "v2"));
+    const A = createModule("A", { uses: [CoreV1] }, (m) => m.single("seen", (r) => r.Core.version()));
+    const B = createModule("B", { uses: [CoreV2] }, (m) => m.single("seen", (r) => r.Core.version()));
+
+    const app = createContainer({
+      parts: [
+        A,
+        B,
+        CoreV1.override((o) => o.with("version", () => "fake v1")),
+        CoreV2.override((o) => o.with("version", () => "fake v2")),
+      ],
+    });
+    expect([app.A.seen(), app.B.seen()]).toEqual(["fake v1", "fake v2"]);
   });
 
   it("async factory and scoped entries can be overridden, lifetimes preserved", async () => {

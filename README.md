@@ -385,6 +385,21 @@ Overrides are fully checked against the original: entry names, value types, and 
 
 An override applies to **every** importer of the target module — overriding `Infra` affects `Data`, `Domain`, `UseCases`, or any other consumer in the graph. That's the point: you fake one thing and the whole graph picks it up. Overriding works on transitive, unexposed modules as well. An override whose target isn't part of the container's wiring is rejected (`InvalidModuleUseError`).
 
+Several overrides can be combined, including several of the same module, as long as each entry is replaced at most once per container. Two overrides replacing the same entry have no right answer, so `createContainer` rejects them (`InvalidModuleUseError`) rather than letting list order pick one:
+
+```ts
+const Services = createModule("Services", (m) =>
+  m.single("logger", (): Logger => new ConsoleLogger()).single("now", () => () => Date.now()),
+);
+
+const silentLogger = Services.override((o) => o.with("logger", (): Logger => new SilentLogger()));
+const frozenTime = Services.override((o) => o.with("now", () => () => 0));
+const loudLogger = Services.override((o) => o.with("logger", (): Logger => new ConsoleLogger()));
+
+createContainer({ parts: [Services, silentLogger, frozenTime] }); // ok: different entries
+createContainer({ parts: [Services, silentLogger, loudLogger] }); // throws: 'Services.logger' replaced twice
+```
+
 An override provider may resolve the module's _other_ entries (`r.Infra.someOther()`), but fakes are expected to be self-contained — the original's imports are reachable at runtime but not surfaced in the override's types.
 
 ## Guardrails
@@ -555,7 +570,7 @@ const fake = SomeModule.override((o) =>
 
 Replaces entries of the module it was derived from. `with` targets sync entries, `withAsync` async ones; entry names, value types, and modes are checked against the original. Lifetime is inherited. Pass the result into `createContainer`.
 
-An override must replace at least one entry, and duplicate replacements are rejected.
+An override must replace at least one entry, and duplicate replacements are rejected, both within one override and across the overrides passed to one `createContainer`.
 
 ## License
 

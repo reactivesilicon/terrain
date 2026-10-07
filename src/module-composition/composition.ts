@@ -33,7 +33,11 @@ import {
   storeModuleInternals,
 } from "./module-internals";
 import { buildNamespacePrototypes, createResolverNamespaceBuilder } from "./module-namespaces";
-import { buildModuleOverride, buildOverrideKernelModule } from "./module-override/build-module-overrides";
+import {
+  assertNoEntryReplacedTwice,
+  buildModuleOverride,
+  buildOverrideKernelModule,
+} from "./module-override/build-module-overrides";
 import type { ModuleOverride } from "./module-override/module-override";
 import type {
   ComposedModuleBuilder,
@@ -206,6 +210,8 @@ export function createContainer<const Parts extends readonly ContainerPart[]>(
       );
     }
   }
+
+  assertNoEntryReplacedTwice(overrides);
 
   const container = new Container(options);
   for (const wiringModule of wiring) {
