@@ -151,8 +151,8 @@ Properties terrain enforces, beyond resolving values:
 - **Tree disposal semantics** — disposing a container invalidates its whole subtree;
   a disposed container throws on use.
 - **Name safety** — module and entry names are validated to identifiers (reserved view
-  names excluded for modules); no name can collide with internal machinery or built-in
-  object properties.
+  names excluded for modules, and `then` for entries, so a namespace is never mistaken for
+  a promise); no name can collide with internal machinery or built-in object properties.
 
 ## Capabilities at a glance
 

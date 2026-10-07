@@ -375,6 +375,18 @@ describe("named modules (spike)", () => {
     }
   });
 
+  it("an entry named then is reserved, so a namespace is always safe to await", async () => {
+    const attempt = () => createModule("Mod", (m) => m.single("then" as never, () => 1));
+    expect(attempt).toThrow(InvalidEntryNameError);
+    expect(attempt).toThrow(
+      "Entry name 'then' in module 'Mod' must be a valid identifier (dot-accessible) and not a reserved name (then).",
+    );
+
+    const Mod = createModule("Mod", (m) => m.single("value", () => 1));
+    const app = createContainer({ parts: [Mod] });
+    expect(await (async () => app.Mod)()).toBe(app.Mod);
+  });
+
   it("a throwing provider is wrapped in ProviderExecutionError naming the entry, with the original as cause", () => {
     const original = new Error("db down");
     const M = createModule("M", (m) =>

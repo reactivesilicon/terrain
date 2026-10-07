@@ -1,20 +1,27 @@
-import { InvalidModuleNameError, InvalidModuleUseError } from "../errors";
-import { RESERVED_MODULE_NAMES } from "./reserved-module-names";
+import { InvalidEntryNameError, InvalidModuleNameError, InvalidModuleUseError } from "../errors";
+import { RESERVED_ENTRY_NAMES, RESERVED_MODULE_NAMES } from "./reserved-names";
 
-export { RESERVED_MODULE_NAMES };
-export type { ReservedModuleName } from "./reserved-module-names";
+export { RESERVED_ENTRY_NAMES, RESERVED_MODULE_NAMES };
+export type { ReservedEntryName, ReservedModuleName } from "./reserved-names";
 
 const IDENTIFIER_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 const RESERVED_MODULE_NAME_SET: ReadonlySet<string> = new Set(RESERVED_MODULE_NAMES);
+const RESERVED_ENTRY_NAME_SET: ReadonlySet<string> = new Set(RESERVED_ENTRY_NAMES);
 
-export function isIdentifierName(name: string): boolean {
+function isIdentifierName(name: string): boolean {
   return IDENTIFIER_NAME.test(name);
 }
 
 export function assertModuleName(name: string): void {
   if (!isIdentifierName(name) || RESERVED_MODULE_NAME_SET.has(name)) {
     throw new InvalidModuleNameError(name);
+  }
+}
+
+export function assertEntryName(entryName: string, moduleName: string): void {
+  if (!isIdentifierName(entryName) || RESERVED_ENTRY_NAME_SET.has(entryName)) {
+    throw new InvalidEntryNameError(entryName, moduleName);
   }
 }
 

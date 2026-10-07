@@ -1,4 +1,4 @@
-import { RESERVED_MODULE_NAMES } from "./validations/reserved-module-names";
+import { RESERVED_ENTRY_NAMES, RESERVED_MODULE_NAMES } from "./validations/reserved-names";
 
 /** Base class for all framework-raised errors. */
 export class DIError extends Error {}
@@ -133,7 +133,10 @@ export class InvalidModuleNameError extends DIError {
 
 export class InvalidEntryNameError extends DIError {
   constructor(entry: string, module: string) {
-    super(`Entry name '${entry}' in module '${module}' must be a valid identifier (dot-accessible).`);
+    super(
+      `Entry name '${entry}' in module '${module}' must be a valid identifier (dot-accessible) ` +
+        `and not a reserved name (${RESERVED_ENTRY_NAMES.join(", ")}).`,
+    );
     this.name = "InvalidEntryNameError";
   }
 }

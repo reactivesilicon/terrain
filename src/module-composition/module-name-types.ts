@@ -1,4 +1,4 @@
-import type { ReservedModuleName } from "../validations/reserved-module-names";
+import type { ReservedEntryName, ReservedModuleName } from "../validations/reserved-names";
 
 type Digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
 type LowercaseAsciiLetter =
@@ -51,4 +51,4 @@ type IdentifierName<Name extends string> = string extends Name
     : never;
 
 export type PublicModuleName<Name extends string> = Name extends ReservedModuleName ? never : IdentifierName<Name>;
-export type PublicModuleEntryName<Name extends string> = IdentifierName<Name>;
+export type PublicModuleEntryName<Name extends string> = Name extends ReservedEntryName ? never : IdentifierName<Name>;

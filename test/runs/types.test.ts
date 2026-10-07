@@ -165,6 +165,18 @@ describe("public type contract (positive assertions)", () => {
         m.scoped("", () => 1);
         // @ts-expect-error spaces are not valid entry identifiers
         m.scopedAsync("user repo", async () => 1);
+        // @ts-expect-error 'then' is reserved: await would treat the namespace as a promise
+        m.single("then", () => 1);
+        // @ts-expect-error 'then' is reserved
+        m.singleAsync("then", async () => 1);
+        // @ts-expect-error 'then' is reserved
+        m.factory("then", () => 1);
+        // @ts-expect-error 'then' is reserved
+        m.factoryAsync("then", async () => 1);
+        // @ts-expect-error 'then' is reserved
+        m.scoped("then", () => 1);
+        // @ts-expect-error 'then' is reserved
+        m.scopedAsync("then", async () => 1);
         return m;
       });
     };

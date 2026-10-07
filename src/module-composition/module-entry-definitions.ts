@@ -1,8 +1,8 @@
-import { DuplicateEntryNameError, InvalidEntryNameError, InvalidModuleUseError } from "../errors";
+import { DuplicateEntryNameError, InvalidModuleUseError } from "../errors";
 import type { Simplify } from "../kernel/types";
 import { type AsyncToken, createAsyncToken, createSyncToken, type Token, TokenModes } from "../token";
 import type { FactoryDefinitionOptions, Lifetime, ScopedDefinitionOptions, SingletonDefinitionOptions } from "../types";
-import { isIdentifierName } from "../validations/name-validations";
+import { assertEntryName } from "../validations/name-validations";
 import type {
   AsyncProviderResolver,
   ComposedModuleName,
@@ -108,9 +108,7 @@ export class ModuleEntryDefinitions {
       );
     }
 
-    if (!isIdentifierName(definition.entryName)) {
-      throw new InvalidEntryNameError(definition.entryName, this.#moduleName);
-    }
+    assertEntryName(definition.entryName, this.#moduleName);
 
     if (this.#definitionsByEntryName.has(definition.entryName)) {
       throw new DuplicateEntryNameError(definition.entryName, this.#moduleName);

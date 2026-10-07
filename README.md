@@ -159,7 +159,12 @@ createModule("Infra", (m) => {
 });
 ```
 
-**Module names may be any identifier except the view's reserved method names** (`scope`, `start`, `dispose`); **entry names may be any identifier.** Module names are the namespaces, and the reserved list is exactly the view's own methods. The type signature rejects literal reserved module names and non-identifier module or entry names at compile time; runtime backstops re-validate dynamic names (`InvalidModuleNameError`, `InvalidEntryNameError`).
+**Module and entry names may be any identifier, with a few reserved exceptions** (below). The type signature rejects reserved and non-identifier names at compile time; runtime backstops re-validate dynamic names (`InvalidModuleNameError`, `InvalidEntryNameError`).
+
+**Reserved names:**
+
+- **Module names `scope`, `start`, `dispose`**: module names become namespaces on the container view, and these are the view's own methods.
+- **Entry name `then`**: `await` treats any object with a callable `then` as a promise, so a namespace holding such an entry would hang when awaited.
 
 ## Composition with `uses`
 
@@ -425,12 +430,12 @@ The type system catches the wiring mistakes it can express:
 - **Cross-module cycles are unwritable** — `uses` only accepts modules that already exist.
 - **Sync providers can't reach async entries** of their imports.
 - **Unknown module or entry names** are type errors.
-- **Reserved module names** (`scope`, `start`, `dispose`) and **non-identifier module or entry names** are rejected before runtime.
+- **Reserved names** (`scope`, `start`, `dispose` for modules; `then` for entries) and **non-identifier module or entry names** are rejected before runtime.
 
 Runtime backstops catch invalid dynamic input and lifecycle failures, each as a `DIError` subclass:
 
 - **Module names must be identifiers and not reserved view names** (`InvalidModuleNameError`).
-- **Entry names must be identifiers** (`InvalidEntryNameError`).
+- **Entry names must be identifiers and not `then`** (`InvalidEntryNameError`).
 - **Duplicate entry and module names** are rejected (`DuplicateEntryNameError`, `DuplicateModuleNameError`).
 - **Runtime dependency cycles through escape hatches** throw `CircularDependencyError`; concurrent async cycles are detected instead of hanging.
 - **Only modules created by `createModule` are accepted** (`ForeignModuleError`).
@@ -513,7 +518,7 @@ function createModule(name, setup): ComposedModule;
 function createModule(name, { uses }, setup): ComposedModule;
 ```
 
-`name` must be an identifier and not a reserved view name (`scope`, `start`, `dispose`). `setup` receives a builder and must **return the chain**. With `{ uses }`, the used modules' entries are available in every provider resolver under their module names.
+`name` must be an identifier and not a reserved view name (`scope`, `start`, `dispose`); entry names must be identifiers other than `then`. `setup` receives a builder and must **return the chain**. With `{ uses }`, the used modules' entries are available in every provider resolver under their module names.
 
 Builder methods — each takes `(entryName, provider, options?)` and returns the next builder in the chain:
 
