@@ -1,23 +1,17 @@
 # terrain — project status
 
-> Maintainer notes. Updated 2026-10-07, branch `develop`.
+> Maintainer notes. Updated 2026-10-08, branch `develop`.
 
 ## Where things stand
 
-The latest published release is **terrain v1.2.0**
+The latest published release is **terrain v1.3.0**
 
 - npm package: **`terrain-di`**; the bare name `terrain` is squatted.
 - GitHub Releases is the changelog channel; `CHANGELOG.md` was deliberately removed.
 - `src/index.ts` exports the composition layer, the errors the public API can throw, and the option/disposer types. Tokens, the raw `Container`, the kernel `ModuleBuilder`, and the engine-only errors are internal implementation details reachable only by deep imports.
 - `README.md` documents the composition API as the primary API.
 
-The 1.2.0 release carries:
-
-- **Container options through the composition API**: `createContainer({ options, parts })` — a config object (the old variadic `createContainer(...parts)` is removed) that exposes `ContainerOptions.onDisposeError`; scopes inherit it.
-- **Null-prototype accessor/namespace/view hardening** (bug fix): entry names like `source`/`accessorCache`/`toString` previously mis-resolved against internal or `Object.prototype` keys; accessor state is now Symbol-keyed and the namespace/view objects are null-prototype, so any identifier name is safe.
-- **Relaxed module names**: any identifier except the reserved view methods `scope`/`start`/`dispose` (PascalCase is no longer required). Both module and entry names are now validated for identifier-ness at **compile time** (template-literal type guard) as well as at runtime.
-
-## Unreleased (1.3.0 candidate)
+## The 1.3.0 release
 
 Kept as a minor version on purpose, although it contains breaking changes (the factory option rename, the per-lifetime option types, and the trimmed error exports below, and the server-runtime requirement); terrain has no users yet, so there is nothing to migrate. Runtime: Node.js ≥ 22 (`engines`; Node 20 is end-of-life). terrain imports the built-in `node:async_hooks`, so browser bundles, which were never a declared target but happened to work, now fail. Performance note, measured 2026-10-01: on Node 22, once terrain's first disposer runs `AsyncLocalStorage`, every `await` in the process costs ~75 ns more (~3× on a pure-await microbenchmark; far less in I/O-bound apps, and nothing extra if the app already uses `AsyncLocalStorage`, e.g. Next.js or OpenTelemetry). Node 24 has no such cost.
 
@@ -37,8 +31,8 @@ Kept as a minor version on purpose, although it contains breaking changes (the f
 - **Error exports trimmed to what the public API can throw** (breaking): `src/index.ts` now lists its errors explicitly. No longer exported (engine-only, unreachable through `createModule`/`createContainer`): `LifecycleOperationError`, `ModuleOwnershipError`, `DependentInstanceError`, `DefinitionInUseError`, `ShadowedDefinitionError`, `DuplicateDefinitionError`, `InvalidDefinitionError`, `AsyncProviderError`, `SyncProviderError`, `MissingDependencyError`. Checked 2026-10-07 by logging every error constructed while the public-API suites (8 fuzzer seeds) and the example ran: none of these appeared. `ProviderExecutionError` and `CircularDependencyError` stay; probes confirmed both are reachable (a throwing provider; a cycle through an override). README's error list now carries one line per error.
 - **Error messages speak the public vocabulary**: `ProviderExecutionError` says "Provider for entry 'M.x'" (was "token"), and `DuplicateEntryNameError` says "Duplicate entry name" (was "accessor"). Engine-only messages are unchanged.
 - **Builders sealed after setup** (behavior change): a module builder used after `createModule` returned used to drop its late entries silently, and an override builder used after `override()` returned changed the already-created override for later containers. Both now throw `InvalidModuleUseError`, also when setup itself threw. Imperative registration during setup still works. `isFrameworkError` is now a type guard (`error is DIError`), so it narrows like `instanceof`.
-- **Cleanup, no behavior change**: dead type aliases with their `@ts-ignore`s and the file-wide lint disable removed from `module-composition/types.ts`; commented-out types removed and `SyncProvision`/`AsyncProvision` renamed `ErasedSyncProvider`/`ErasedAsyncProvider`; `assertNoNamespaceCollisions` moved from `wiring.ts` to `validations/name-validations.ts`. No TODOs left in `src`; lint is at 0 warnings.
-- **Gate at this update**: `bun run quality` green, 257 tests across 18 files, coverage 100 / 99.33 / 100 / 100; the same suite passes on Node 22, Node 24, and Bun's runtime.
+- **Cleanup, no behavior change**: commented-out types removed and `SyncProvision`/`AsyncProvision` renamed `ErasedSyncProvider`/`ErasedAsyncProvider`; `assertNoNamespaceCollisions` moved from `wiring.ts` to `validations/name-validations.ts`. No TODOs left in `src`; lint is at 0 warnings.
+- **Gate at this update**: `bun run quality` green, 259 tests across 18 files, coverage 100 / 99.34 / 100 / 100; the same suite passes on Node 22, Node 24, and Bun's runtime.
 
 ## Public API now
 
@@ -99,7 +93,9 @@ Release positioning — everything in v1.1.0, plus:
 - Concurrent async-cycle detection (hardening raw engine surface): a mutual async cycle resolved by concurrent `getAsync` calls used to deadlock, because coalescing joins an in-flight promise without extending the resolution chain the per-chain circular check inspects. A root-level dependency graph (`WaitForGraph`) now tracks in-flight provider dependencies — every `resolver.getAsync(T)` from inside a provider, whether built or coalesced — and throws `CircularDependencyError` on the request that would close a cycle, instead of hanging.
   - **Conservative by contract**: the engine treats `resolver.getAsync(T)` inside a provider as _dependency acquisition_, whether or not you await the returned promise. It does not (cannot) observe JavaScript await timing, so this is in-flight dependency tracking, not "live await" detection. Consequence: fire-and-forget `void resolver.getAsync(X)` or a `Promise.race` over resolutions inside a provider that forms a cycle is reported as circular even though it might not deadlock at runtime. This is intentional — a DI container reasons about the dependency graph. (Cycles are unwritable through the composition API regardless; this only affects raw-engine deep-import use.)
 
-Release checks run locally:
+## Release checks
+
+Run locally:
 
 ```sh
 bun run quality
@@ -108,12 +104,13 @@ npm pack --dry-run
 npm view terrain-di version
 ```
 
-Observed results (latest run on `main`):
+Observed results for 1.3.0 (2026-10-08, `develop` at `c55723b` plus the README pointer fix):
 
 - `bun run quality`: passed.
-- Tests: **199 passed** across **18 files** with coverage gates met.
-- Coverage summary: statements 100%, branches 99.24%, functions 100%, lines 100%.
-- `bun run build`: passed; generates `dist/index.js` and `dist/index.d.ts`.
+- Tests: **259 passed, 1 skipped** across **18 files** (1 skipped file) with coverage gates met.
+- Coverage summary: statements 100%, branches 99.34%, functions 100%, lines 100%.
+- `bun run build`: passed; generates `dist/index.js` (imports only `node:async_hooks`) and `dist/index.d.ts` (no Node type references).
+- `npm pack --dry-run`: exactly `LICENSE`, `README.md`, `dist/index.js`, `dist/index.d.ts`, `package.json`.
 
 Before publishing:
 
