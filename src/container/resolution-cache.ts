@@ -72,26 +72,25 @@ export class ResolutionCache {
       build: () => this.host.invokeProviderAsync(definition, chain),
       isStale: () => resolutionPromises.get(token) !== promise,
       dispose: definition.dispose,
+      commit: (instance) => {
+        instances.set(token, instance);
+        if (definition.dispose) this.host.trackDisposable(token, instance, definition.dispose);
+        resolutionPromises.delete(token);
+      },
     });
     this.resolutionFrameByPromise.set(promise, ownFrame);
     if (buildWaiter) this.scheduleWaitRemoval(buildWaiter, ownFrame, promise);
     resolutionPromises.set(token, promise);
 
-    const settledResolution = await promise.then(
-      (value) => ({ ok: true as const, value }),
-      (error) => ({ ok: false as const, error }),
-    );
-
-    if (settledResolution.ok) {
-      instances.set(token, settledResolution.value);
-      if (definition.dispose) {
-        this.host.trackDisposable(token, settledResolution.value, definition.dispose);
-      }
-      resolutionPromises.delete(token);
-      return settledResolution.value;
+    try {
+      return await promise;
+    } catch (error) {
+      /* v8 ignore next -- defensive: teardown drops a pending promise only after
+         awaiting it, so a failed resolution is still the registered one here.
+         Guards future reordering. */
+      if (resolutionPromises.get(token) === promise) resolutionPromises.delete(token);
+      throw error;
     }
-    if (resolutionPromises.get(token) === promise) resolutionPromises.delete(token);
-    throw settledResolution.error;
   }
 
   private recordCoalescedWaitOrThrow(chain: ResolutionFrame[], inFlightResolution: Promise<unknown>): void {
@@ -172,11 +171,13 @@ export class ResolutionCache {
     build,
     isStale,
     dispose,
+    commit,
   }: {
     token: AsyncToken<any>;
     build: () => Promise<T>;
     isStale: () => boolean;
     dispose?: Disposer<T> | undefined;
+    commit?: (instance: T) => void;
   }): Promise<T> {
     let instance: T;
     try {
@@ -188,6 +189,10 @@ export class ResolutionCache {
       await this.disposeOrphan(instance, dispose);
       throw new DisposedContainerError();
     }
+    // Same synchronous step as the check above. A teardown that began before it
+    // made the guard dispose the instance and throw; one that begins after finds
+    // it cached with its disposer registered.
+    commit?.(instance);
     return instance;
   }
 

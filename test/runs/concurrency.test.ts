@@ -30,6 +30,77 @@ describe("concurrency", () => {
     expect(disposed, "orphaned in-flight instance must be disposed").toBe(true);
   });
 
+  // Sweeps the teardown's start across the microtasks around the provider
+  // settling. The outcome must hold on every tick, so no case depends on
+  // teardown's current timing.
+  it.each([
+    ["singleton", "dispose()", 1],
+    ["singleton", "dispose()", 2],
+    ["singleton", "unload()", 1],
+    ["singleton", "unload()", 2],
+    ["scoped", "dispose()", 1],
+    ["scoped", "dispose()", 2],
+    ["scoped", "the root's dispose()", 1],
+    ["scoped", "the root's dispose()", 2],
+    ["scoped", "unload()", 1],
+    ["scoped", "unload()", 2],
+  ] as const)(
+    "an async %s settling around %s with %i in-flight caller(s) is disposed once and never left cached",
+    async (lifetime, teardown, callers) => {
+      for (let teardownDelayInMicrotasks = 0; teardownDelayInMicrotasks < 12; teardownDelayInMicrotasks++) {
+        const offset = `offset ${teardownDelayInMicrotasks}`;
+        const T = createAsyncToken<object>(
+          `commitWindow-${lifetime}-${teardown}-${callers}-${teardownDelayInMicrotasks}`,
+        );
+        const providerGate = createGate();
+        let builds = 0;
+        let disposerCalls = 0;
+        const provide = async () => {
+          builds += 1;
+          await providerGate.opened;
+          return {};
+        };
+        const dispose = () => void (disposerCalls += 1);
+        const mod = createModule((m) =>
+          lifetime === "singleton" ? m.singleAsync(T, provide, { dispose }) : m.scopedAsync(T, provide, { dispose }),
+        );
+        const root = new Container();
+        root.load(mod);
+        const resolver = lifetime === "singleton" ? root : root.createScope();
+        const outcomes = Promise.all(
+          Array.from({ length: callers }, () =>
+            resolver.getAsync(T).then(
+              () => "resolved",
+              (error: unknown) => (error instanceof DisposedContainerError ? "disposed" : error),
+            ),
+          ),
+        );
+
+        providerGate.open();
+        let teardownStart: Promise<unknown> = Promise.resolve();
+        for (let i = 0; i < teardownDelayInMicrotasks; i++) teardownStart = teardownStart.then(() => {});
+        await teardownStart.then(() => {
+          if (teardown === "dispose()") return resolver.dispose();
+          if (teardown === "the root's dispose()") return root.dispose();
+          return root.unload(mod);
+        });
+        const [firstOutcome, ...otherOutcomes] = await outcomes;
+        await delay(0);
+
+        expect(["resolved", "disposed"], offset).toContain(firstOutcome);
+        for (const outcome of otherOutcomes) expect(outcome, `${offset}: callers share one outcome`).toBe(firstOutcome);
+        expect(builds, `${offset}: callers share one build`).toBe(1);
+        expect(disposerCalls, offset).toBe(1);
+        if (teardown === "unload()") {
+          root.load(mod);
+          const reloadResolver = lifetime === "singleton" ? root : root.createScope();
+          await reloadResolver.getAsync(T);
+          expect(builds, `${offset}: a reload must build afresh`).toBe(2);
+        }
+      }
+    },
+  );
+
   it("in-flight async factory is orphaned on dispose", async () => {
     const T = createAsyncToken<object>("ifFactoryDispose");
     const providerGate = createGate();
