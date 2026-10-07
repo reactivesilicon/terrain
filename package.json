@@ -1,6 +1,6 @@
 {
   "name": "terrain-di",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "A pragmatic TypeScript dependency injection framework. No decorators, no reflection, no runtime dependencies",
   "keywords": [
     "container",
