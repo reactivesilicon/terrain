@@ -162,4 +162,73 @@ describe("public type contract (positive assertions)", () => {
       });
     };
   });
+
+  it("each lifetime takes only its own options, on the builder and on overrides", () => {
+    interface Db {
+      query(sql: string): string;
+    }
+    const openDb = (): Db => ({ query: () => "" });
+
+    const Infra = createModule("Infra", (m) =>
+      m
+        .single("pool", openDb, {
+          dispose: (pool) => {
+            expectTypeOf(pool).toEqualTypeOf<Db>();
+          },
+          eager: true,
+        })
+        .scoped("tx", openDb, {
+          dispose: (tx) => {
+            expectTypeOf(tx).toEqualTypeOf<Db>();
+          },
+        })
+        .factoryAsync("conn", async () => openDb(), {
+          disposeUnclaimed: (conn) => {
+            expectTypeOf(conn).toEqualTypeOf<Db>();
+          },
+        }),
+    );
+
+    Infra.override((o) =>
+      o
+        .with("pool", openDb, {
+          dispose: (pool) => {
+            expectTypeOf(pool).toEqualTypeOf<Db>();
+          },
+          eager: true,
+        })
+        .with("tx", openDb, {
+          dispose: (tx) => {
+            expectTypeOf(tx).toEqualTypeOf<Db>();
+          },
+        })
+        .withAsync("conn", async () => openDb(), {
+          disposeUnclaimed: (conn) => {
+            expectTypeOf(conn).toEqualTypeOf<Db>();
+          },
+        }),
+    );
+
+    void function compileOnly() {
+      createModule("BadOptions", (m) => {
+        // @ts-expect-error a factory never disposes what it handed out: no dispose
+        m.factory("f", openDb, { dispose: () => {} });
+        // @ts-expect-error a factory caches nothing: no eager
+        m.factoryAsync("fa", async () => openDb(), { eager: true });
+        // @ts-expect-error disposeUnclaimed is factory-only
+        m.scoped("s", openDb, { disposeUnclaimed: () => {} });
+        // @ts-expect-error a scoped entry has no scope at boot: no eager
+        m.scopedAsync("sa", async () => openDb(), { eager: true });
+        // @ts-expect-error disposeUnclaimed is factory-only
+        m.single("x", openDb, { disposeUnclaimed: () => {} });
+        return m;
+      });
+      // @ts-expect-error a factory override takes disposeUnclaimed, not dispose
+      Infra.override((o) => o.withAsync("conn", async () => openDb(), { dispose: () => {} }));
+      // @ts-expect-error eager needs a singleton original
+      Infra.override((o) => o.with("tx", openDb, { eager: true }));
+      // @ts-expect-error disposeUnclaimed is factory-only
+      Infra.override((o) => o.with("pool", openDb, { disposeUnclaimed: () => {} }));
+    };
+  });
 });

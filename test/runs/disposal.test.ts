@@ -42,7 +42,9 @@ describe("disposal", () => {
     const T = createSyncToken<{ dispose(): void }>("factoryDisp");
     let n = 0;
     const c = new Container();
-    c.load(createModule((m) => m.factory(T, () => ({ dispose: () => (n += 1) }), { dispose: (x) => x.dispose() })));
+    c.load(
+      createModule((m) => m.factory(T, () => ({ dispose: () => (n += 1) }), { disposeUnclaimed: (x) => x.dispose() })),
+    );
     for (let i = 0; i < 500; i++) c.get(T);
     await c.dispose();
     expect(n, "factories are caller-owned").toBe(0);

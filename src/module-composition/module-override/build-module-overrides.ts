@@ -1,12 +1,13 @@
 import { InvalidModuleUseError } from "../../errors";
 import { createModule as createKernelModule, type Module } from "../../module";
 import { type AnyToken, type TokenMode, TokenModes } from "../../token";
-import { Lifetimes, type SingletonDefinitionOptions } from "../../types";
+import { Lifetimes } from "../../types";
 import { tokenName } from "../../utils";
 import { toKernelDefinition } from "../kernel-definition-transformer";
 import {
   type AsyncModuleEntryDefinitionWithToken,
   type AsyncModuleEntryProvider,
+  type ErasedDefinitionOptions,
   eraseAsyncEntryProvider,
   eraseSyncEntryProvider,
   type ModuleEntryDefinitionWithToken,
@@ -32,17 +33,17 @@ export function buildModuleOverride<ModuleName extends ComposedModuleName, Modul
   function assertEntryCanBeReplaced(
     entryName: ModuleEntryName,
     expectedMode: typeof TokenModes.Sync,
-    options?: SingletonDefinitionOptions<unknown>,
+    options?: ErasedDefinitionOptions,
   ): SyncModuleEntryDefinitionWithToken;
   function assertEntryCanBeReplaced(
     entryName: ModuleEntryName,
     expectedMode: typeof TokenModes.Async,
-    options?: SingletonDefinitionOptions<unknown>,
+    options?: ErasedDefinitionOptions,
   ): AsyncModuleEntryDefinitionWithToken;
   function assertEntryCanBeReplaced(
     entryName: ModuleEntryName,
     expectedMode: TokenMode,
-    options?: SingletonDefinitionOptions<unknown>,
+    options?: ErasedDefinitionOptions,
   ): ModuleEntryDefinitionWithToken {
     const original = entryDefinitionsByEntryName.get(entryName);
     if (!original) {
@@ -67,7 +68,7 @@ export function buildModuleOverride<ModuleName extends ComposedModuleName, Modul
   const collectSyncReplacement = <EntryName extends ModuleEntryName>(
     entryName: EntryName,
     provider: SyncModuleEntryProvider<ModuleName, ModuleEntries, EntryName>,
-    options?: SingletonDefinitionOptions<unknown>,
+    options?: ErasedDefinitionOptions,
   ): OverrideBuilder<ModuleName, ModuleEntries> => {
     const original = assertEntryCanBeReplaced(entryName, TokenModes.Sync, options);
     replacementsByEntryName.set(entryName, { ...original, provider: eraseSyncEntryProvider(provider), options });
@@ -77,7 +78,7 @@ export function buildModuleOverride<ModuleName extends ComposedModuleName, Modul
   const collectAsyncReplacement = <EntryName extends ModuleEntryName>(
     entryName: EntryName,
     provider: AsyncModuleEntryProvider<ModuleName, ModuleEntries, EntryName>,
-    options?: SingletonDefinitionOptions<unknown>,
+    options?: ErasedDefinitionOptions,
   ): OverrideBuilder<ModuleName, ModuleEntries> => {
     const original = assertEntryCanBeReplaced(entryName, TokenModes.Async, options);
     replacementsByEntryName.set(entryName, { ...original, provider: eraseAsyncEntryProvider(provider), options });
@@ -88,13 +89,13 @@ export function buildModuleOverride<ModuleName extends ComposedModuleName, Modul
     with: <EntryName extends ModuleEntryName>(
       entryName: EntryName,
       provider: SyncModuleEntryProvider<ModuleName, ModuleEntries, EntryName>,
-      options?: SingletonDefinitionOptions<unknown>,
+      options?: ErasedDefinitionOptions,
     ) => collectSyncReplacement(entryName, provider, options),
 
     withAsync: <EntryName extends ModuleEntryName>(
       entryName: EntryName,
       provider: AsyncModuleEntryProvider<ModuleName, ModuleEntries, EntryName>,
-      options?: SingletonDefinitionOptions<unknown>,
+      options?: ErasedDefinitionOptions,
     ) => collectAsyncReplacement(entryName, provider, options),
   };
 

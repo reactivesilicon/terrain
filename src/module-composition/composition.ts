@@ -10,7 +10,7 @@ import { Container } from "../container/container";
 import { InvalidModuleUseError } from "../errors";
 import { createModule as createKernelModule } from "../module";
 import { type AnyToken, TokenModes } from "../token";
-import { type Definition, type Lifetime, Lifetimes, type SingletonDefinitionOptions } from "../types";
+import { type Definition, type Lifetime, Lifetimes } from "../types";
 import { assertModuleName } from "../validations/name-validations";
 import { type ComposedModule, createComposedModule } from "./composed-module";
 import { buildContainerView } from "./container-views";
@@ -18,6 +18,7 @@ import { toKernelDefinition } from "./kernel-definition-transformer";
 import {
   type AsyncModuleEntryProvider,
   bundleModuleEntryDefinitionWithToken,
+  type ErasedDefinitionOptions,
   eraseAsyncEntryProvider,
   eraseSyncEntryProvider,
   ModuleEntryDefinitions,
@@ -63,7 +64,7 @@ function makeBuilder<ModuleName extends ComposedModuleName, ModuleEntries extend
     (
       entryName: ModuleEntryName,
       provider: SyncModuleEntryProvider<ModuleName, ModuleEntries, typeof entryName>,
-      options?: SingletonDefinitionOptions<unknown>,
+      options?: ErasedDefinitionOptions,
     ) => {
       moduleEntryDefinitions.register({
         entryName: entryName,
@@ -80,7 +81,7 @@ function makeBuilder<ModuleName extends ComposedModuleName, ModuleEntries extend
     (
       entryName: ModuleEntryName,
       provider: AsyncModuleEntryProvider<ModuleName, ModuleEntries, typeof entryName>,
-      options?: SingletonDefinitionOptions<unknown>,
+      options?: ErasedDefinitionOptions,
     ) => {
       moduleEntryDefinitions.register({
         entryName: entryName,

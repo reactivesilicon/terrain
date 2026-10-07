@@ -3,7 +3,8 @@ import type { AnyToken, AsyncToken, Token } from "./token";
 import {
   type AsyncProvider,
   type Definition,
-  type DefinitionOptions,
+  type FactoryDefinitionOptions,
+  type ScopedDefinitionOptions,
   type SingletonDefinitionOptions,
   Lifetimes,
   type SyncProvider,
@@ -77,27 +78,27 @@ export class ModuleBuilder {
     });
   }
 
-  factory<T>(token: Token<T>, provider: SyncProvider<T>, options?: DefinitionOptions<T>): void {
+  factory<T>(token: Token<T>, provider: SyncProvider<T>, options?: FactoryDefinitionOptions<T>): void {
     this.define({
       token: token,
       lifetime: Lifetimes.Factory,
       async: false,
       provider: provider,
-      ...(options?.dispose ? { dispose: options.dispose } : {}),
+      ...(options?.disposeUnclaimed ? { dispose: options.disposeUnclaimed } : {}),
     });
   }
 
-  factoryAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>, options?: DefinitionOptions<T>): void {
+  factoryAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>, options?: FactoryDefinitionOptions<T>): void {
     this.define({
       token: token,
       lifetime: Lifetimes.Factory,
       async: true,
       provider: provider,
-      ...(options?.dispose ? { dispose: options.dispose } : {}),
+      ...(options?.disposeUnclaimed ? { dispose: options.disposeUnclaimed } : {}),
     });
   }
 
-  scoped<T>(token: Token<T>, provider: SyncProvider<T>, options?: DefinitionOptions<T>): void {
+  scoped<T>(token: Token<T>, provider: SyncProvider<T>, options?: ScopedDefinitionOptions<T>): void {
     this.define({
       token: token,
       lifetime: Lifetimes.Scoped,
@@ -107,7 +108,7 @@ export class ModuleBuilder {
     });
   }
 
-  scopedAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>, options?: DefinitionOptions<T>): void {
+  scopedAsync<T>(token: AsyncToken<T>, provider: AsyncProvider<T>, options?: ScopedDefinitionOptions<T>): void {
     this.define({
       token: token,
       lifetime: Lifetimes.Scoped,

@@ -104,7 +104,9 @@ describe("stress: random operation sequences", () => {
               Object.assign(instance, { deps });
               return instance;
             };
-            const options = hasDisposer ? { dispose: makeDisposer() } : {};
+            const disposer = hasDisposer ? makeDisposer() : undefined;
+            const cachedOptions = disposer ? { dispose: disposer } : {};
+            const factoryOptions = disposer ? { disposeUnclaimed: disposer } : {};
 
             if (isAsync) {
               const token = createAsyncToken<Instance>(`s${sequence}t${nextTokenId}`);
@@ -119,18 +121,18 @@ describe("stress: random operation sequences", () => {
                 return construct(deps);
               };
               if (lifetime === "single") {
-                m.singleAsync(token, provider, chance(0.2) ? { ...options, eager: true } : options);
-              } else if (lifetime === "scoped") m.scopedAsync(token, provider, options);
-              else m.factoryAsync(token, provider, options);
+                m.singleAsync(token, provider, chance(0.2) ? { ...cachedOptions, eager: true } : cachedOptions);
+              } else if (lifetime === "scoped") m.scopedAsync(token, provider, cachedOptions);
+              else m.factoryAsync(token, provider, factoryOptions);
               asyncTokens.push(token);
             } else {
               const token = createSyncToken<Instance>(`s${sequence}t${nextTokenId}`);
               nextTokenId += 1;
               const provider = (r: { get: <T>(t: Token<T>) => T }) => construct(syncDeps.map((t) => r.get(t)));
               if (lifetime === "single") {
-                m.single(token, provider, chance(0.2) ? { ...options, eager: true } : options);
-              } else if (lifetime === "scoped") m.scoped(token, provider, options);
-              else m.factory(token, provider, options);
+                m.single(token, provider, chance(0.2) ? { ...cachedOptions, eager: true } : cachedOptions);
+              } else if (lifetime === "scoped") m.scoped(token, provider, cachedOptions);
+              else m.factory(token, provider, factoryOptions);
               syncTokens.push(token);
             }
           }

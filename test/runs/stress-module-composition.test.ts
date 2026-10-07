@@ -92,7 +92,7 @@ describe("stress: named layer random operations", () => {
             };
             const options: Record<string, unknown> = {};
             if (hasDisposer) {
-              options.dispose = (x: Instance) => {
+              options[lifetime === "factory" ? "disposeUnclaimed" : "dispose"] = (x: Instance) => {
                 x.disposeCount += 1;
                 if (x.disposeCount > 1) violations.push(`instance #${x.id} disposed ${x.disposeCount} times`);
               };

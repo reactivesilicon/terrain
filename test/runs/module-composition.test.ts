@@ -628,6 +628,35 @@ describe("named modules (spike)", () => {
     expect(app.Mod.derived()).toBe(11);
   });
 
+  it("a factory's disposeUnclaimed runs only for an instance nobody claimed", async () => {
+    const closed: string[] = [];
+    const openerGate = createGate();
+    let opened = 0;
+    const Infra = createModule("Infra", (m) =>
+      m.factoryAsync(
+        "conn",
+        async () => {
+          opened += 1;
+          const name = `conn${opened}`;
+          if (opened === 3) await openerGate.opened;
+          return name;
+        },
+        { disposeUnclaimed: (conn) => void closed.push(conn) },
+      ),
+    );
+    const app = createContainer({ parts: [Infra] });
+
+    const claimed = [await app.Infra.conn(), await app.Infra.conn()];
+    const unclaimed = app.Infra.conn().catch((error: unknown) => error);
+    const shutdown = app.dispose();
+    openerGate.open();
+
+    expect(await unclaimed).toBeInstanceOf(DisposedContainerError);
+    await shutdown;
+    expect(claimed).toEqual(["conn1", "conn2"]);
+    expect(closed, "claimed connections are the caller's; only the unclaimed one is closed").toEqual(["conn3"]);
+  });
+
   it("override misuse is rejected loudly", () => {
     const Mod = createModule("Mod", (m) => m.single("x", () => 1).scoped("ctx", () => ({})));
     // unused override (target not in the wiring)

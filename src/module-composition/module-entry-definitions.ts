@@ -1,7 +1,7 @@
 import { DuplicateEntryNameError, InvalidEntryNameError } from "../errors";
 import type { Simplify } from "../kernel/types";
 import { type AsyncToken, createAsyncToken, createSyncToken, type Token, TokenModes } from "../token";
-import type { Lifetime, SingletonDefinitionOptions } from "../types";
+import type { FactoryDefinitionOptions, Lifetime, ScopedDefinitionOptions, SingletonDefinitionOptions } from "../types";
 import { isIdentifierName } from "../validations/name-validations";
 import type {
   AsyncProviderResolver,
@@ -34,10 +34,14 @@ export type AsyncModuleEntryProvider<
 // export type AsyncModuleEntryProvider = (resolverNamespaces: ResolverNamespacesValue) => Promise<unknown>;
 // export type ModuleEntryProvider = SyncModuleEntryProvider | AsyncModuleEntryProvider;
 
+export type ErasedDefinitionOptions = SingletonDefinitionOptions<unknown> &
+  ScopedDefinitionOptions<unknown> &
+  FactoryDefinitionOptions<unknown>;
+
 type BaseModuleEntryDefinition = {
   entryName: ModuleEntryName;
   lifetime: Lifetime;
-  options: SingletonDefinitionOptions<unknown> | undefined;
+  options: ErasedDefinitionOptions | undefined;
 };
 
 // TODO: find better name

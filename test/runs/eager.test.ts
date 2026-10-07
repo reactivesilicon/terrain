@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DisposedContainerError, type SingletonDefinitionOptions } from "../../src";
+import { DisposedContainerError, type FactoryDefinitionOptions } from "../../src";
 import { delay } from "../helpers";
 import { Container, createAsyncToken, createModule, createSyncToken } from "../internal-api";
 
@@ -112,12 +112,12 @@ describe("eager start", () => {
     await expect(c.start()).rejects.toThrowError(DisposedContainerError);
   });
 
-  it("an eager option smuggled past the literal check is ignored for factories", async () => {
+  it("an eager option forced past the types is ignored for factories", async () => {
     const F = createSyncToken<number>("egSmuggled");
     let built = 0;
-    // Excess-property checks only fire on object literals; a widened variable
-    // compiles. The builder's non-singleton path must never read eager.
-    const smuggled: SingletonDefinitionOptions<number> = { eager: true };
+    // Singleton options don't type-check as factory options; forced through,
+    // the engine's factory path must still never read eager.
+    const smuggled = { eager: true } as unknown as FactoryDefinitionOptions<number>;
     const c = new Container();
     c.load(createModule((m) => m.factory(F, () => (built += 1), smuggled)));
     await c.start();

@@ -1,11 +1,5 @@
 import { TokenModes } from "../token";
-import {
-  type AsyncResolver,
-  type Definition,
-  Lifetimes,
-  type SingletonDefinitionOptions,
-  type SyncResolver,
-} from "../types";
+import { type AsyncResolver, type Definition, Lifetimes, type SyncResolver } from "../types";
 import type { ModuleEntryDefinitionWithToken } from "./module-entry-definitions";
 
 export type ResolverNamespaces = {
@@ -13,25 +7,26 @@ export type ResolverNamespaces = {
   forAsyncProvider(resolver: AsyncResolver): Record<string, unknown>;
 };
 
-function singletonDefinitionOptions(options: SingletonDefinitionOptions<unknown> | undefined) {
-  return {
-    ...(options?.dispose ? { dispose: options.dispose } : {}),
-    ...(options?.eager ? { eager: true } : {}),
-  };
-}
-
-function nonSingletonDefinitionOptions(options: SingletonDefinitionOptions<unknown> | undefined) {
-  return options?.dispose ? { dispose: options.dispose } : {};
+function lifetimeOptions({ lifetime, options }: ModuleEntryDefinitionWithToken) {
+  switch (lifetime) {
+    case Lifetimes.Singleton:
+      return {
+        lifetime,
+        ...(options?.dispose ? { dispose: options.dispose } : {}),
+        ...(options?.eager ? { eager: true } : {}),
+      };
+    case Lifetimes.Scoped:
+      return { lifetime, ...(options?.dispose ? { dispose: options.dispose } : {}) };
+    case Lifetimes.Factory:
+      return { lifetime, ...(options?.disposeUnclaimed ? { dispose: options.disposeUnclaimed } : {}) };
+  }
 }
 
 export function toKernelDefinition(
   entryDefinition: ModuleEntryDefinitionWithToken,
   resolverNamespaces: ResolverNamespaces,
 ): Definition<unknown> {
-  const options =
-    entryDefinition.lifetime === Lifetimes.Singleton
-      ? { lifetime: entryDefinition.lifetime, ...singletonDefinitionOptions(entryDefinition.options) }
-      : { lifetime: entryDefinition.lifetime, ...nonSingletonDefinitionOptions(entryDefinition.options) };
+  const options = lifetimeOptions(entryDefinition);
 
   switch (entryDefinition.mode) {
     case TokenModes.Sync: {

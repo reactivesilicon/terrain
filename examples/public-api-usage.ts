@@ -79,7 +79,7 @@ async function main() {
   // Passing Data auto-wires Infra; passing Infra too exposes its namespace.
   const app = createContainer({
     parts: [infraModule, dataModule, actionsModule],
-    options: { onDisposeError: (e) => console.error("orphan dispose failed:", e) },
+    options: { onDisposeError: (e) => console.error("unclaimed instance dispose failed:", e) },
   });
 
   console.log("user:", app.Data.userRepo().find("1")); // typed, token-free

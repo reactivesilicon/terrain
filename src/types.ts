@@ -26,28 +26,37 @@ export type SyncProvider<T> = (resolver: SyncResolver) => T;
 export type AsyncProvider<T> = (resolver: AsyncResolver) => Promise<T>;
 export type Provider<T> = SyncProvider<T> | AsyncProvider<T>;
 
-/** Teardown registered with a definition. May be async even for sync tokens —
- *  disposal always runs in an async context (dispose/unload/withScope). */
+/** Teardown registered with a definition. May be async even for a sync
+ *  entry: disposal always runs in an async context. */
 export type Disposer<T> = (instance: T) => void | Promise<void>;
 
-/** Per-definition registration options. */
-export interface DefinitionOptions<T> {
-  /** Singleton and scoped entries: called with the instance when its
-   *  container/scope is disposed.
-   *  Factories: instances belong to the caller and are never disposed by the
-   *  container; called only for an instance that finishes building after its
-   *  container started disposing, which nobody else could receive.
-   *  Without it the container never touches the instance at teardown — there
-   *  is no dispose() duck-typing. */
+/** Options for single/singleAsync. */
+export interface SingletonDefinitionOptions<T> {
+  /** Called with the instance when its container is disposed. Without it the
+   *  container never touches the instance at teardown: there is no dispose()
+   *  duck-typing. */
+  dispose?: Disposer<T>;
+  /** Construct this instance during start() instead of on first resolution,
+   *  for connections and similar work that must finish at boot. Only
+   *  singletons can be eager: a factory caches nothing, and a scoped entry has
+   *  no scope to construct into at boot. */
+  eager?: boolean;
+}
+
+/** Options for scoped/scopedAsync. */
+export interface ScopedDefinitionOptions<T> {
+  /** Called with the instance when the scope (or container) holding it is
+   *  disposed. Without it the container never touches the instance at
+   *  teardown: there is no dispose() duck-typing. */
   dispose?: Disposer<T>;
 }
 
-/** Options for single/singleAsync. Only singletons can be eager: factories
- *  cache nothing, and "eager scoped" has no scope to construct into. */
-export interface SingletonDefinitionOptions<T> extends DefinitionOptions<T> {
-  /** Construct this instance during container.start() instead of on first
-   *  resolution — for connections and similar work that must finish at boot. */
-  eager?: boolean;
+/** Options for factory/factoryAsync. A factory's instances belong to the
+ *  caller: the container never disposes an instance it handed out. */
+export interface FactoryDefinitionOptions<T> {
+  /** Called only for an instance nobody claimed: one that finished building
+   *  after its container started disposing, so it was never handed out. */
+  disposeUnclaimed?: Disposer<T>;
 }
 
 type LifetimeOptions =
@@ -73,6 +82,8 @@ export type AsyncDefinition<T> = Readonly<
   } & LifetimeOptions
 >;
 
+// On a factory definition, `dispose` covers only unclaimed instances: the
+// container keeps no others.
 export type Definition<T> = SyncDefinition<T> | AsyncDefinition<T>;
 
 export interface LoadOptions {
@@ -83,14 +94,13 @@ export interface LoadOptions {
 
 export interface ContainerOptions {
   /** Observe disposal errors that no caller can receive:
-   *  - ORPHANED in-flight instances — a resolution that completed after
-   *    dispose()/unload() had already evicted its token, so its result can't be
-   *    cached and is disposed immediately;
+   *  - unclaimed instances: one that finished building after its container
+   *    started disposing, so it was never handed out and is disposed at once;
    *  - a disposal started by dispose() called from inside a disposer, which
    *    returns without waiting (it can't wait on its own teardown).
    *  Without this hook, those failures are printed with console.error.
-   *  Disposal failures during normal dispose()/unload() are NOT reported here;
-   *  they surface via the AggregateError those methods throw. */
+   *  Disposal failures during a normal dispose() are NOT reported here;
+   *  they surface via the AggregateError it throws. */
   onDisposeError?: (error: unknown) => void;
 }
 

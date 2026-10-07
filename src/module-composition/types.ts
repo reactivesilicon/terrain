@@ -2,7 +2,14 @@
 
 import type { Simplify, UnionToIntersection } from "../kernel/types";
 import { type TokenMode, TokenModes } from "../token";
-import type { ContainerOptions, DefinitionOptions, SingletonDefinitionOptions } from "../types";
+import type {
+  ContainerOptions,
+  FactoryDefinitionOptions,
+  Lifetime,
+  Lifetimes,
+  ScopedDefinitionOptions,
+  SingletonDefinitionOptions,
+} from "../types";
 import type { ComposedModule } from "./composed-module";
 import type { ModuleEntryName } from "./module-entry-definitions";
 import type { PublicModuleEntryName } from "./module-name-types";
@@ -17,25 +24,49 @@ export type { PublicModuleEntryName, PublicModuleName } from "./module-name-type
 
 export type ComposedModuleName = string;
 
-export type ModuleEntry<T, Mode extends TokenMode> = { value: T; mode: Mode };
-export type ModuleEntryMap = Record<string, ModuleEntry<unknown, TokenMode>>;
+export type ModuleEntry<T, Mode extends TokenMode, EntryLifetime extends Lifetime> = {
+  value: T;
+  mode: Mode;
+  lifetime: EntryLifetime;
+};
+export type ModuleEntryMap = Record<string, ModuleEntry<unknown, TokenMode, Lifetime>>;
 
-type ModuleEntryByEntryName<EntryName extends ModuleEntryName, T, Mode extends TokenMode> = {
-  [K in EntryName]: ModuleEntry<T, Mode>;
+type ModuleEntryByEntryName<
+  EntryName extends ModuleEntryName,
+  T,
+  Mode extends TokenMode,
+  EntryLifetime extends Lifetime,
+> = {
+  [K in EntryName]: ModuleEntry<T, Mode, EntryLifetime>;
+};
+
+type DefinitionOptionsByLifetime<T> = {
+  [Lifetimes.Singleton]: SingletonDefinitionOptions<T>;
+  [Lifetimes.Scoped]: ScopedDefinitionOptions<T>;
+  [Lifetimes.Factory]: FactoryDefinitionOptions<T>;
 };
 
 // ── type-level accessors ─────────────────────────────────────────────────────
 // @ts-ignore
 type EntryNamesOf<ModuleEntries extends ModuleEntryMap> = keyof ModuleEntries;
 type SyncEntryNamesOf<ModuleEntries extends ModuleEntryMap> = {
-  [K in keyof ModuleEntries]: ModuleEntries[K] extends ModuleEntry<unknown, typeof TokenModes.Sync> ? K : never;
+  [K in keyof ModuleEntries]: ModuleEntries[K] extends ModuleEntry<unknown, typeof TokenModes.Sync, Lifetime>
+    ? K
+    : never;
 }[keyof ModuleEntries];
 type AsyncEntryNamesOf<ModuleEntries extends ModuleEntryMap> = {
-  [K in keyof ModuleEntries]: ModuleEntries[K] extends ModuleEntry<unknown, typeof TokenModes.Async> ? K : never;
+  [K in keyof ModuleEntries]: ModuleEntries[K] extends ModuleEntry<unknown, typeof TokenModes.Async, Lifetime>
+    ? K
+    : never;
 }[keyof ModuleEntries];
 
 export type EntryValueOf<ModuleEntries extends ModuleEntryMap, EntryName extends keyof ModuleEntries> =
-  ModuleEntries[EntryName] extends ModuleEntry<infer T, TokenMode> ? T : never;
+  ModuleEntries[EntryName] extends ModuleEntry<infer T, TokenMode, Lifetime> ? T : never;
+
+type OverrideOptionsOf<ModuleEntries extends ModuleEntryMap, EntryName extends keyof ModuleEntries> =
+  ModuleEntries[EntryName] extends ModuleEntry<infer T, TokenMode, infer EntryLifetime>
+    ? DefinitionOptionsByLifetime<T>[EntryLifetime]
+    : never;
 
 export type UsedModules = readonly ComposedModule<ComposedModuleName, ModuleEntryMap>[];
 
@@ -111,7 +142,7 @@ export interface ComposedModuleBuilder<
   ): ComposedModuleBuilder<
     ModuleName,
     Uses,
-    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Sync>
+    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Sync, typeof Lifetimes.Singleton>
   >;
 
   singleAsync<const EntryName extends ModuleEntryName, T>(
@@ -121,47 +152,47 @@ export interface ComposedModuleBuilder<
   ): ComposedModuleBuilder<
     ModuleName,
     Uses,
-    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Async>
+    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Async, typeof Lifetimes.Singleton>
   >;
 
   factory<const EntryName extends ModuleEntryName, T>(
     entryName: PublicModuleEntryName<EntryName>,
     provider: (resolver: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
-    options?: DefinitionOptions<T>,
+    options?: FactoryDefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
     Uses,
-    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Sync>
+    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Sync, typeof Lifetimes.Factory>
   >;
 
   factoryAsync<const EntryName extends ModuleEntryName, T>(
     entryName: PublicModuleEntryName<EntryName>,
     provider: (resolver: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
-    options?: DefinitionOptions<T>,
+    options?: FactoryDefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
     Uses,
-    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Async>
+    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Async, typeof Lifetimes.Factory>
   >;
 
   scoped<const EntryName extends ModuleEntryName, T>(
     entryName: PublicModuleEntryName<EntryName>,
     provider: (resolver: SyncProviderResolver<ModuleName, Uses, ModuleEntries>) => T,
-    options?: DefinitionOptions<T>,
+    options?: ScopedDefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
     Uses,
-    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Sync>
+    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Sync, typeof Lifetimes.Scoped>
   >;
 
   scopedAsync<const EntryName extends ModuleEntryName, T>(
     entryName: PublicModuleEntryName<EntryName>,
     provider: (resolver: AsyncProviderResolver<ModuleName, Uses, ModuleEntries>) => Promise<T>,
-    options?: DefinitionOptions<T>,
+    options?: ScopedDefinitionOptions<T>,
   ): ComposedModuleBuilder<
     ModuleName,
     Uses,
-    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Async>
+    ModuleEntries & ModuleEntryByEntryName<EntryName, T, typeof TokenModes.Async, typeof Lifetimes.Scoped>
   >;
 }
 
@@ -174,14 +205,14 @@ export interface OverrideBuilder<ModuleName extends ComposedModuleName, ModuleEn
     provider: (
       resolver: SyncProviderResolver<ModuleName, readonly [], Omit<ModuleEntries, EntryName>>,
     ) => EntryValueOf<ModuleEntries, EntryName>,
-    options?: SingletonDefinitionOptions<EntryValueOf<ModuleEntries, EntryName>>,
+    options?: OverrideOptionsOf<ModuleEntries, EntryName>,
   ): OverrideBuilder<ModuleName, ModuleEntries>;
   withAsync<EntryName extends AsyncEntryNamesOf<ModuleEntries> & ModuleEntryName>(
     entryName: EntryName,
     provider: (
       resolver: AsyncProviderResolver<ModuleName, readonly [], Omit<ModuleEntries, EntryName>>,
     ) => Promise<EntryValueOf<ModuleEntries, EntryName>>,
-    options?: SingletonDefinitionOptions<EntryValueOf<ModuleEntries, EntryName>>,
+    options?: OverrideOptionsOf<ModuleEntries, EntryName>,
   ): OverrideBuilder<ModuleName, ModuleEntries>;
 }
 

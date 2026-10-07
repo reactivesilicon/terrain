@@ -97,6 +97,11 @@ duck-typing of a `.dispose()`/`.close()` method. Disposal runs in **reverse crea
 order** (dependents before dependencies), cascades to scopes, is idempotent, and
 aggregates multiple failures into one `AggregateError`.
 
+Factory instances are the exception: they belong to the caller, and the container never
+disposes one it handed out (keeping them all until shutdown would be an unbounded leak in a
+long-lived container). A factory can register `disposeUnclaimed` instead, which runs only
+for an instance that finished building after teardown began and so was never handed out.
+
 - **You get:** predictable teardown with no accidental disposal of objects that merely
   happen to have a `close()` method.
 - **You pay:** you opt in per entry.
@@ -127,7 +132,7 @@ Properties terrain enforces, beyond resolving values:
   `CircularDependencyError`, not left as mutually waiting promises.
 - **Teardown-race safety** — a resolution that completes after its container/scope was
   disposed (or its module unloaded) is not cached and is disposed immediately rather
-  than leaked; disposal errors from those orphans are observable via `onDisposeError`, and
+  than leaked; disposal errors from those unclaimed instances are observable via `onDisposeError`, and
   printed with `console.error` when no hook is set.
 - **Coordinated lifecycle operations** — disposals run concurrently: sibling scopes (e.g.
   parallel requests) tear down independently, and a container disposing while a descendant
@@ -160,8 +165,8 @@ Properties terrain enforces, beyond resolving values:
 - **Overrides:** derive a typed fake from a module (`Module.override`) and pass it to the
   container; it rewires every importer of the target without exposing a namespace.
   Entry names, value types, and sync/async mode are checked against the original, and each
-  entry can be replaced at most once per container. Only the lifetime is inherited, not
-  `dispose` or `eager`.
+  entry can be replaced at most once per container. Only the lifetime is inherited, and it
+  decides which options the override takes; the original's own options don't carry over.
 - **Container options:** `createContainer({ options, parts })` accepts `onDisposeError`;
   scopes inherit it.
 - **Version diamonds:** two importers can depend on different module objects that share a

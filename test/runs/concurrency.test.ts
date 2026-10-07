@@ -114,7 +114,7 @@ describe("concurrency", () => {
             await providerGate.opened;
             return {};
           },
-          { dispose: () => void (disposed += 1) },
+          { disposeUnclaimed: () => void (disposed += 1) },
         ),
       ),
     );
@@ -137,7 +137,7 @@ describe("concurrency", () => {
           await delay(30);
           return { dispose: () => (disposed = true) };
         },
-        { dispose: (x) => x.dispose() },
+        { disposeUnclaimed: (x) => x.dispose() },
       ),
     );
     const c = new Container();

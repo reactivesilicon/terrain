@@ -3,4 +3,4 @@
 // composition layer, never handed to consumers.
 export * from "./errors";
 export * from "./module-composition";
-export type { DefinitionOptions, Disposer, SingletonDefinitionOptions } from "./types";
+export type { Disposer, FactoryDefinitionOptions, ScopedDefinitionOptions, SingletonDefinitionOptions } from "./types";
