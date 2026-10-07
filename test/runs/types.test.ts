@@ -1,6 +1,13 @@
 import { describe, expectTypeOf, it } from "vitest";
 
-import { createContainer, createModule, type ContainerConfig, type ContainerOptions } from "../../src";
+import {
+  createContainer,
+  createModule,
+  DIError,
+  isFrameworkError,
+  type ContainerConfig,
+  type ContainerOptions,
+} from "../../src";
 
 // Positive type-contract assertions. These are no-ops at runtime; their
 // enforcement path is `bun run typecheck:test` (tsc -p tsconfig.test.json),
@@ -230,5 +237,10 @@ describe("public type contract (positive assertions)", () => {
       // @ts-expect-error disposeUnclaimed is factory-only
       Infra.override((o) => o.with("pool", openDb, { disposeUnclaimed: () => {} }));
     };
+  });
+
+  it("isFrameworkError narrows like instanceof DIError", () => {
+    const caught: unknown = new DIError("x");
+    if (isFrameworkError(caught)) expectTypeOf(caught).toEqualTypeOf<DIError>();
   });
 });

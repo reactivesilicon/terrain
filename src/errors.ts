@@ -99,7 +99,7 @@ export class ProviderExecutionError extends DIError {
 }
 
 /** Any error raised by the framework itself — never wrapped as a provider error. */
-export function isFrameworkError(error: unknown): boolean {
+export function isFrameworkError(error: unknown): error is DIError {
   return error instanceof DIError;
 }
 

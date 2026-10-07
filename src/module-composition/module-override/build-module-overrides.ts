@@ -105,12 +105,11 @@ export function buildModuleOverride<ModuleName extends ComposedModuleName, Modul
     ) => collectAsyncReplacement(entryName, provider, options),
   };
 
-  // Phantom-builder seam: overrideBuilder's runtime methods use looser generics
-  // than the OverrideBuilder interface's entry-name constraints, so the object
-  // is not structurally assignable to it. Irreducible; pinned by
-  // test/runs/types.test.ts.
-  defineOverride(overrideBuilder as any);
-  sealed = true;
+  try {
+    defineOverride(overrideBuilder);
+  } finally {
+    sealed = true;
+  }
   if (replacementsByEntryName.size === 0) {
     throw new InvalidModuleUseError(`Override of module '${moduleName}' replaces nothing.`);
   }

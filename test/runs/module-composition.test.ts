@@ -689,6 +689,16 @@ describe("named modules (spike)", () => {
     expect(() => capturedBuilder!.single("late", () => 2)).toThrowError(
       "Module 'M' is already created; register its entries in the chain its setup returns.",
     );
+
+    // sealed even when setup itself failed
+    let builderOfFailedSetup: { single(name: string, provider: () => number): unknown } | undefined;
+    expect(() =>
+      createModule("Failed", (m) => {
+        builderOfFailedSetup = m;
+        throw new Error("setup failed");
+      }),
+    ).toThrowError("setup failed");
+    expect(() => builderOfFailedSetup!.single("late", () => 2)).toThrowError(InvalidModuleUseError);
   });
 
   it("an override builder used after override() returned throws, leaving the override unchanged", () => {
@@ -703,6 +713,18 @@ describe("named modules (spike)", () => {
       "Override of module 'M' is already created; add its replacements in the chain its callback returns.",
     );
     expect(createContainer({ parts: [M, fake] }).M.b()).toBe("real b");
+
+    // sealed even when the callback itself failed
+    let builderOfFailedOverride: { with(name: string, provider: () => string): unknown } | undefined;
+    expect(() =>
+      M.override((o) => {
+        builderOfFailedOverride = o;
+        throw new Error("callback failed");
+      }),
+    ).toThrowError("callback failed");
+    expect(() => builderOfFailedOverride!.with("b", () => "fake b")).toThrowError(
+      "Override of module 'M' is already created; add its replacements in the chain its callback returns.",
+    );
   });
 
   it("override misuse is rejected loudly", () => {

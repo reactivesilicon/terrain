@@ -1,10 +1,10 @@
 // Caveats, documented:
 // - Go-to-definition on r.Infra.logger lands on a mapped type, not the
-//   provider — inherent to computed accessor types (token variables in the
-//   1.0 API jump better).
+//   provider — inherent to computed accessor types.
 // - The chain is the contract: capturing `m` and registering imperatively
-//   (e.g. inside an if) registers at runtime but is invisible to the types.
-//   Keep setup a single returned chain.
+//   (e.g. inside an if) registers at runtime but is invisible to the types;
+//   once setup returns, the builder is sealed and throws. Keep setup a single
+//   returned chain.
 
 import { Container } from "../container/container";
 import { InvalidModuleUseError } from "../errors";
@@ -144,8 +144,11 @@ export function createModule(
 
   const moduleEntryDefinitions = new ModuleEntryDefinitions(moduleName);
   const composedModuleBuilder = makeBuilder<typeof moduleName, ModuleEntryMap>(moduleEntryDefinitions);
-  setup(composedModuleBuilder);
-  moduleEntryDefinitions.seal();
+  try {
+    setup(composedModuleBuilder);
+  } finally {
+    moduleEntryDefinitions.seal();
+  }
 
   const entryDefinitions = Array.from(moduleEntryDefinitions.registeredDefinitions());
   const entryDefinitionsWithTokens = entryDefinitions.map(bundleModuleEntryDefinitionWithToken.bind(null, moduleName));
